@@ -58,7 +58,8 @@
  *  server uses them) and tells the panel clients what changed every 50 ms. The apps: the FT8
  *  list's rows go out as they come ("ft8r {...}", the last 48 to a page that opens later), the
  *  app's state when it changes ("ft8 {...}"), the CW decoder's text ("cw \"...\""); "ft8
- *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "log
+ *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "wefax
+ *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), "log
  *  CALL|RSTS|RSTR|NAME" writes the day's log as the CW keyboard does ("logged ok|no"). "logq ID
  *  CALL|..." is the same with a number the page chose: the answer is "logged ID ok|no", kept for
  *  the last 64, and "logq? ID CALL|..." asks for it again after a dropped connection or a reload,
@@ -112,6 +113,7 @@
 #include "smeter.h"
 #include "tci_ws.h"
 #include "tx_meters.h"
+#include "wefax_window.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -263,6 +265,7 @@ typedef struct {
     bool    tx, lock;
     bool    ulock;          /* the user's lock alone (LOCK), not an app's hold: the page's LOCK button */
     bool    cwrise;         /* CW's tone rises with the dial, as CW-R's (the X6200): its CW passband the other side */
+    char    app[16];        /* the digital app open (main_screen_digital_app), "" for none */
 } pstate_t;
 
 /* A change asked by a panel client, for the LVGL thread */
@@ -1084,6 +1087,9 @@ static void pstate_read(pstate_t *s) {
     s->ulock = main_screen_freq_user_locked();
     s->tune  = ext_tune_on();
     s->tune_s = ext_tune_limit_s();
+    const char *app = main_screen_digital_app();
+    memset(s->app, 0, sizeof(s->app));      /* compared whole with memcmp */
+    snprintf(s->app, sizeof(s->app), "%s", app ? app : "");
 }
 
 static void pstate_line(char *buf, size_t n, const pstate_t *s) {
@@ -1091,10 +1097,10 @@ static void pstate_line(char *buf, size_t n, const pstate_t *s) {
              "state {\"freq\":%d,\"mode\":%d,\"flo\":%d,\"fhi\":%d,\"kt\":%d,\"agc\":%d,\"pre\":%d,\"att\":%d,"
              "\"nb\":%d,\"nr\":%d,\"sql\":%d,\"rfg\":%d,\"vol\":%d,\"pwr\":%d.%d,\"step\":%d,\"zoom\":%d,"
              "\"vfo\":%d,\"atu\":%d,\"bat\":%d,\"tx\":%d,\"lock\":%d,\"tune\":%d,\"tune_s\":%d,\"ulock\":%d,"
-             "\"cwrise\":%d}",
+             "\"cwrise\":%d,\"app\":\"%s\"}",
              s->freq, s->mode, s->flo, s->fhi, s->kt, s->agc, s->pre, s->att, s->nb, s->nr, s->sql, s->rfg, s->vol,
              s->pwr10 / 10, s->pwr10 % 10, s->step, s->zoom, s->vfo, s->atu, s->bat, s->tx, s->lock, s->tune, s->tune_s,
-             s->ulock, s->cwrise);
+             s->ulock, s->cwrise, s->app);
 }
 
 /* A string into JSON: quotes and backslashes escaped, control characters dropped */
@@ -1389,11 +1395,11 @@ static void ft8_status_line(char *buf, size_t n, const ft8_status_t *s) {
 }
 
 /* What the panel asks of the apps, on the LVGL thread */
-typedef enum { A_FT8_OPEN, A_FT8_CLOSE, A_FT8, A_LOG } acmd_id_t;
+typedef enum { A_FT8_OPEN, A_FT8_CLOSE, A_FT8, A_WEFAX_OPEN, A_WEFAX_CLOSE, A_WEFAX, A_LOG } acmd_id_t;
 
 typedef struct {
     acmd_id_t   id;
-    int         what;       /* ft8_rc_t */
+    int         what;       /* ft8_rc_t, wefax_rc_t */
     int32_t     arg;
     bool        has_cell;
     cell_data_t cell;
@@ -1522,6 +1528,19 @@ static void app_apply(void *arg) {
         case A_FT8:
             ft8_window_remote((ft8_rc_t)a->what, a->arg, a->has_cell ? &a->cell : NULL);
             break;
+        case A_WEFAX_OPEN:
+            if (!dialog_type_is_run(dialog_wefax)) {
+                backlight_tick();
+                main_screen_start_app(ACTION_APP_WEFAX);
+            }
+            break;
+        case A_WEFAX_CLOSE:
+            if (dialog_type_is_run(dialog_wefax))
+                main_screen_close_app();
+            break;
+        case A_WEFAX:
+            wefax_window_remote((wefax_rc_t)a->what);
+            break;
         case A_LOG:
             log_answer(a->who, a->log_id, a->sum, dialog_field_qso_log(a->text));
             break;
@@ -1559,6 +1578,30 @@ static bool app_ft8_cmd(const char *what, const char *arg) {
             if (!a.has_cell)
                 return false;
         }
+    }
+    scheduler_put(app_apply, &a, sizeof(a));
+    return true;
+}
+
+/* "wefax open|close|auto|cont|save|clear": Auto waits for the start tone and saves at the stop tone, Cont takes rows
+ * at once, Save writes the rows kept to /mnt/wefax and starts over, Clear drops them */
+static bool app_wefax_cmd(const char *what) {
+    static const struct {
+        const char *name;
+        wefax_rc_t  rc;
+    } rcs[] = {{"auto", WEFAX_RC_AUTO}, {"cont", WEFAX_RC_CONT}, {"save", WEFAX_RC_SAVE}, {"clear", WEFAX_RC_CLEAR}};
+    acmd_t a = {.id = A_WEFAX};
+
+    if (!strcasecmp(what, "open")) {
+        a.id = A_WEFAX_OPEN;
+    } else if (!strcasecmp(what, "close")) {
+        a.id = A_WEFAX_CLOSE;
+    } else {
+        size_t i = 0;
+        while (i < sizeof(rcs) / sizeof(rcs[0]) && strcasecmp(rcs[i].name, what)) i++;
+        if (i == sizeof(rcs) / sizeof(rcs[0]))
+            return false;
+        a.what = rcs[i].rc;
     }
     scheduler_put(app_apply, &a, sizeof(a));
     return true;
@@ -2121,6 +2164,11 @@ static void handle_text(client_t *c, char *text) {
             return;
         if (!app_ft8_cmd(a[1], n >= 3 ? a[2] : NULL))
             client_textf(c, "err ft8 %s", a[1]);
+    } else if (!strcmp(a[0], "wefax") && n >= 2) {
+        if (!allowed(c, ROLE_OPERATE, true))
+            return;
+        if (!app_wefax_cmd(a[1]))
+            client_textf(c, "err wefax %s", a[1]);
     } else if (!strcmp(a[0], "key") && n >= 3) {
         int  code = key_code(a[1]);
         bool down = atoi(a[2]) != 0;
