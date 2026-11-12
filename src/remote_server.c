@@ -61,7 +61,8 @@
  *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "wefax
  *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), "pos LAT
  *  LON [ACC]" gives the radio the phone's position (degrees, the accuracy in metres; Field Ops uses
- *  it when no GPS is plugged in, operate without control: it touches nothing of the RF side), "log
+ *  it when no GPS is plugged in, operate without control: it touches nothing of the RF side), "clk? MS" and
+ *  "clk MS RTT" the phone's clock (clock_from_phone: the radio's set from it in the field, NTP away), "log
  *  CALL|RSTS|RSTR|NAME" writes the day's log as the CW keyboard does ("logged ok|no"). "logq ID
  *  CALL|..." is the same with a number the page chose: the answer is "logged ID ok|no", kept for
  *  the last 64, and "logq? ID CALL|..." asks for it again after a dropped connection or a reload,
@@ -128,6 +129,8 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/time.h>
+#include <sys/timex.h>
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdarg.h>
@@ -1825,6 +1828,48 @@ static bool allowed(client_t *c, uint8_t role, bool control) {
     return true;
 }
 
+/* "clk MS RTT": the phone's clock, step 2 (operate). MS its time as it sent this, RTT the round trip it measured with
+ * "clk?": the radio's clock is set to MS + RTT / 2 when it is more than CLK_STEP_MS off, and only while NTP does not
+ * keep it (the kernel says the clock is not synchronised: no internet in the field). A round trip over CLK_RTT_MAX_MS
+ * is no measure. Answered "clk set|ok|ntp|slow MS" (the difference found) */
+#define CLK_STEP_MS     300
+#define CLK_RTT_MAX_MS  1000
+
+static void clock_from_phone(client_t *c, const char *ms_s, const char *rtt_s) {
+    char           *e1, *e2;
+    long long       ms = strtoll(ms_s, &e1, 10), rtt = strtoll(rtt_s, &e2, 10);
+    struct timespec now;
+    struct timex    tx = {0};
+
+    if (!allowed(c, ROLE_OPERATE, false))
+        return;
+    if (*e1 || *e2 || ms < 1700000000000LL || rtt < 0) {
+        client_text(c, "err clk MS RTT");
+        return;
+    }
+    clock_gettime(CLOCK_REALTIME, &now);
+    long long ours = (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000, theirs = ms + rtt / 2, diff = theirs - ours;
+    if (rtt > CLK_RTT_MAX_MS) {
+        client_textf(c, "clk slow %lld", diff);
+        return;
+    }
+    if (adjtimex(&tx) >= 0 && !(tx.status & STA_UNSYNC)) {     /* NTP keeps it: the phone is not needed */
+        client_textf(c, "clk ntp %lld", diff);
+        return;
+    }
+    if (llabs(diff) <= CLK_STEP_MS) {
+        client_textf(c, "clk ok %lld", diff);
+        return;
+    }
+    struct timespec set = {.tv_sec = theirs / 1000, .tv_nsec = (theirs % 1000) * 1000000};
+    if (clock_settime(CLOCK_REALTIME, &set) != 0) {
+        client_textf(c, "err clk: %s", strerror(errno));
+        return;
+    }
+    LV_LOG_USER("Clock set from the phone: %+lld ms (round trip %lld ms)", diff, rtt);
+    client_textf(c, "clk set %lld", diff);
+}
+
 /* "key PTT 1 HOLD": the radio's own microphone keyed, HOLD the page's number for this press; the page sends the
  * same every second to renew the lease (ptt_lease). Only the hold that keyed is renewed: one that ended (the lease
  * ran out, three minutes, a release) or was refused stays ended, so the renewals a stalled link delivers late key
@@ -2172,6 +2217,13 @@ static void handle_text(client_t *c, char *text) {
             return;
         if (!app_wefax_cmd(a[1]))
             client_textf(c, "err wefax %s", a[1]);
+    } else if (!strcmp(a[0], "clk?") && n >= 2) {
+        /* the phone's clock, step 1: its time sent back with ours, so the page knows the round trip */
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        client_textf(c, "clk %s %lld", a[1], (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    } else if (!strcmp(a[0], "clk") && n >= 3) {
+        clock_from_phone(c, a[1], a[2]);
     } else if (!strcmp(a[0], "pos") && n >= 3) {
         char   *e1, *e2;
         double  lat = strtod(a[1], &e1), lon = strtod(a[2], &e2);

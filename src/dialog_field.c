@@ -1393,11 +1393,11 @@ static void prog_info_update(void) {
 
         map_dist(d, sizeof(d));
         snprintf(buf, sizeof(buf), "%s  #%06x %s%s#", d[0] ? d : have_pos ? grid : "-", theme_hex(TC_text_dim),
-                 have_pos ? src : "", have_pos && age > 60 ? " (old)" : "");    /* one line: the status under it */
+                 have_pos ? src : "", have_pos && age > (strcmp(src, "PHONE") ? 60 : 150) ? " (old)" : "");    /* one line: the status under it */
     } else
     snprintf(buf, sizeof(buf), "%s%s\n%s\n#%06x Position from %s%s#", alt, have_pos ? grid : "-",
              have_pos ? deg : "GPS, phone or locator needed", theme_hex(TC_text_dim), have_pos ? src : "-",
-             have_pos && age > 60 ? " (old)" : "");
+             have_pos && age > (strcmp(src, "PHONE") ? 60 : 150) ? " (old)" : "");
     lv_label_set_text(info_lines, buf);
     lv_obj_set_style_bg_color(info_dot, TC(err), 0);
     lv_label_set_text(info_state, "NOT ACTIVE");
