@@ -458,7 +458,7 @@ static void draw_overview(lv_draw_ctx_t *ctx) {
     lv_draw_line_dsc_t  line;
     lv_area_t           a;
     lv_point_t          p1, p2;
-    char                s[24];
+    char                s[48];
     int                 n = 0, k = 0;
 
     for (int b = 0; b < NB; b++) n += band_ok[b];
@@ -557,6 +557,14 @@ static void draw_overview(lv_draw_ctx_t *ctx) {
     }
     text.font = &sony_16;
     text.color = TC(text_dim);
+    if (scanning && !rekey && pos < points) {
+        int32_t f = freq_at(pos);
+
+        text.color = TC(tx);
+        snprintf(s, sizeof(s), "Sweeping %s: TX %d.%03d MHz", bands[cur_band].name, (int)(f / 1000000),
+                 (int)(f / 1000 % 1000));
+        draw_text(ctx, &text, x0 + w / 2, 0, plot->coords.y2 - 17, s, true);
+    } else
     draw_text(ctx, &text, x0 + w / 2, 0, plot->coords.y2 - 17,
               range == R_CAL ? "50 ohm dummy load on the antenna socket: Run calibrates every band"
                              : "MFK: choose a band - press: a closer look", true);
@@ -656,6 +664,15 @@ static void draw_cb(lv_event_t *e) {
     snprintf(s, sizeof(s), "%s%s", range == R_BAND ? bands[sel_band].name : range == R_SEG ? segs[sel_seg].name : "",
              band_of(f_low) >= 0 && cal_ok[band_of(f_low)][pwr_idx()] ? "  cal" : "");
     if (s[0]) draw_text(ctx, &text, x0 + 60, y0 + 16, 0, s, false);
+
+    /* The frequency on the air while it sweeps: the strip above keeps the VFO's, where Stop goes back to */
+    if (scanning && !rekey && pos < points) {
+        int32_t f = freq_at(pos);
+
+        text.color = TC(tx);
+        snprintf(s, sizeof(s), "TX %d.%03d.%03d", (int)(f / 1000000), (int)(f / 1000 % 1000), (int)(f % 1000));
+        draw_text(ctx, &text, x0 + 60, y0 + 44, 0, s, false);
+    }
 
     /* The sweep before, faint, then this one */
     if (have_ghost) {
