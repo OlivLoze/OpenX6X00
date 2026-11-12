@@ -389,6 +389,8 @@ char field_ref_prog(const char *ref) {
     size_t      n = ref ? strlen(ref) : 0;
     const char *dash = n ? strchr(ref, '-') : NULL;
 
+    if (n >= 7 && n <= 15 && !strncmp(ref, "XOTA-", 5) && strspn(ref + 5, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ") == n - 5)
+        return 'X';     /* our own: XOTA-W13ZWYH from an OSM way, XOTA-N.../R..., XOTA-P... one of our spots */
     if (n == 6 && ref[0] == 'X' && digits_end(ref + 1, 5))               /* X42018 */
         return 'M';
     if (n == 6 && tile(ref))                                             /* JO20ab: a Tiles tile */
@@ -438,6 +440,7 @@ const char *field_prog_sig(char prog) {
         case 'L': return "ARLHS";   /* the lighthouses' numbering; GMA takes the reference from its upload form */
         case 'G': return "TILES";   /* Tiles reads the tile from MY_GRIDSQUARE; MY_SIG names the activation here */
         case 'K': return "LLOTA";   /* llota.app finds the lake by MY_SIG LLOTA / MY_SIG_INFO in the upload */
+        case 'X': return "XOTA";
         default:  return NULL;
     }
 }
@@ -455,6 +458,7 @@ const char *field_qso_tag(const field_qso_t *q) {
         case 'L': return "L2L";
         case 'G': return "T3";      /* Tiles' own name for tile to tile */
         case 'K': return "LL2LL";   /* lake to lake: L2L is the lighthouses' */
+        case 'X': return "X2X";
         default:  return "";
     }
 }

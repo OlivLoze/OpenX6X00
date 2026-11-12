@@ -33,6 +33,9 @@ static pthread_cond_t  cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t pos_lock = PTHREAD_MUTEX_INITIALIZER;
 static double          gpsd_lat, gpsd_lon;
 static time_t          gpsd_time;    /* when it came, 0 before the first */
+static double          phone_lat, phone_lon;
+static int             phone_acc;
+static time_t          phone_time;   /* when it came, 0 before the first */
 
 #if HAVE_LIBGPS
 
@@ -131,6 +134,30 @@ bool gps_last_fix(double *lat, double *lon, int *age) {
     if (when) {
         *lat = gpsd_lat;
         *lon = gpsd_lon;
+        *age = (int)(time(NULL) - when);
+    }
+    pthread_mutex_unlock(&pos_lock);
+    return when != 0;
+}
+
+void gps_phone_set(double lat, double lon, int acc) {
+    pthread_mutex_lock(&pos_lock);
+    phone_lat  = lat;
+    phone_lon  = lon;
+    phone_acc  = acc;
+    phone_time = time(NULL);
+    pthread_mutex_unlock(&pos_lock);
+}
+
+bool gps_phone_fix(double *lat, double *lon, int *age, int *acc) {
+    time_t when;
+
+    pthread_mutex_lock(&pos_lock);
+    when = phone_time;
+    if (when) {
+        *lat = phone_lat;
+        *lon = phone_lon;
+        *acc = phone_acc;
         *age = (int)(time(NULL) - when);
     }
     pthread_mutex_unlock(&pos_lock);

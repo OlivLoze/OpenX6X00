@@ -59,7 +59,9 @@
  *  list's rows go out as they come ("ft8r {...}", the last 48 to a page that opens later), the
  *  app's state when it changes ("ft8 {...}"), the CW decoder's text ("cw \"...\""); "ft8
  *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "wefax
- *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), "log
+ *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), "pos LAT
+ *  LON [ACC]" gives the radio the phone's position (degrees, the accuracy in metres; Field Ops uses
+ *  it when no GPS is plugged in, operate without control: it touches nothing of the RF side), "log
  *  CALL|RSTS|RSTR|NAME" writes the day's log as the CW keyboard does ("logged ok|no"). "logq ID
  *  CALL|..." is the same with a number the page chose: the answer is "logged ID ok|no", kept for
  *  the last 64, and "logq? ID CALL|..." asks for it again after a dropped connection or a reload,
@@ -92,6 +94,7 @@
 #include "remote_sessions.h"
 #include "control_owner.h"
 #include "front_keys.h"
+#include "gps.h"
 #include "msg_box.h"
 #include "board.h"
 
@@ -2169,6 +2172,18 @@ static void handle_text(client_t *c, char *text) {
             return;
         if (!app_wefax_cmd(a[1]))
             client_textf(c, "err wefax %s", a[1]);
+    } else if (!strcmp(a[0], "pos") && n >= 3) {
+        char   *e1, *e2;
+        double  lat = strtod(a[1], &e1), lon = strtod(a[2], &e2);
+        double  acc = n >= 4 ? strtod(a[3], NULL) : 0;
+        if (!allowed(c, ROLE_OPERATE, false))
+            return;
+        if (*e1 || *e2 || !isfinite(lat) || !isfinite(lon) || fabs(lat) > 90 || fabs(lon) > 180 || !isfinite(acc)
+            || acc < 0) {
+            client_text(c, "err pos LAT LON [ACC]");
+            return;
+        }
+        gps_phone_set(lat, lon, acc > 100000 ? 100000 : (int)lround(acc));
     } else if (!strcmp(a[0], "key") && n >= 3) {
         int  code = key_code(a[1]);
         bool down = atoi(a[2]) != 0;
