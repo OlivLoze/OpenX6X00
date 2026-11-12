@@ -1270,7 +1270,10 @@ static void build_ref(void) {
     list_head(head, 404, 8);
     if (near_n > 0 && near_prog == st.prog) {
         for (int k = 0; k < near_n; k++) {
-            snprintf(row, sizeof(row), "%s\t%.*f\t%s", near[k].ref, near[k].km < 10 ? 1 : 0, near[k].km, near[k].name);
+            /* XOTA's references without "XOTA-": 13 characters did not fit the column, the title says XOTA */
+            const char *shown = st.prog == 'X' && !strncmp(near[k].ref, "XOTA-", 5) ? near[k].ref + 5 : near[k].ref;
+
+            snprintf(row, sizeof(row), "%s\t%.*f\t%s", shown, near[k].km < 10 ? 1 : 0, near[k].km, near[k].name);
             list_add(row);
             if (st.have_ref && !strcmp(near[k].ref, st.ref.ref))
                 sel = k;
