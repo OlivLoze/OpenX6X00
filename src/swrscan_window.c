@@ -56,7 +56,7 @@
 #define TOP_H       34      /* the frequencies above the grid */
 #define BOTTOM_H    10
 #define REKEY_MS    400     /* between two bands: unkeyed, the relays set, then the carrier again */
-#define SETTLE_N    3       /* readings left out after the carrier comes: the first read 1.0 before the power is up */
+#define SETTLE_N    4       /* readings left out after the carrier comes: the first two or three read 1.0 to 2, rising */
 #define GUARD_SWR   3.0f    /* over 1 W: three readings over it in a row bring the power back to 1 W */
 #define GUARD_N     3
 #define CAL_MAX_G   0.2f    /* the reflection a dummy load may show: SWR 1.5 */
