@@ -74,6 +74,7 @@
 #define FIELD_ICONS BOARD_SHARE "/field"
 #endif
 #define REFS_PATH   FIELD_DIR "/refs.tsv"
+#define XOTA_PATH   FIELD_DIR "/xota.tsv"   /* XOTA: our own spots, never downloaded, never spotted */
 #define STATE_PATH  FIELD_DIR "/state"
 #define HOTA_KEY    FIELD_DIR "/hota.conf"   /* written by the web page (Field Ops) */
 #define WWFF_KEY    FIELD_DIR "/wwff.conf"
@@ -89,6 +90,7 @@
 #define MAX_NEAR    30
 #define MAX_QSO     200
 #define GPS_MAX_AGE 600     /* s */
+#define PHONE_MAX_ACC 1000  /* m: coarser than that (a phone placed by its cell), the locator does as well */
 #define PHONE_MAX_AGE 1800
 
 typedef enum { SCR_HOME, SCR_PROG, SCR_BANDS, SCR_LOG } screen_t;
@@ -103,7 +105,7 @@ static struct {
     screen_t    screen;
     int         home_sel;
     char        prog;       /* 'S' SOTA, 'P' POTA, 'B' WWBOTA, 'H' HOTA, 'F' WWFF, 'T' TOTA, 'C' WCA, 'M' MOTA, 'L' LH,
-                             * 'G' Tiles, 'K' LLOTA */
+                             * 'G' Tiles, 'K' LLOTA, 'X' XOTA */
     bool        have_ref;
     field_ref_t ref;
     bool        active;
@@ -201,8 +203,11 @@ static const prog_t progs[] = {
      * activator's login there: the DX clusters, "LLOTA LLPL-0001 SSB"; llota.app's spots come in with the others
      * (x6100-pota-spots) */
     {'K', "LLOTA",  "llota",  "Lakes and\nLagoons",  "LAKE",   10, false, false},
+    /* XOTA: our own list (bunkers, remains, abandoned places, our spots), XOTA-001..., in xota.tsv beside refs.tsv,
+     * which Update list leaves alone. Nobody else knows these references: never spotted, anywhere */
+    {'X', "XOTA",   "xota",   "Our own\nspots",      "SPOT",   1,  false, false},
 };
-#define PROG_LETTERS "SPBHFTCMLGK"
+#define PROG_LETTERS "SPBHFTCMLGKX"
 
 /* The programme of a letter; SOTA for one that is none (a damaged file): DX cluster spots only, never a site's */
 static const prog_t *prog_of(char p) {
@@ -227,6 +232,7 @@ static lv_color_t prog_color(char p) {
         case 'L': return TC(err);                                       /* the red of the bands */
         case 'G': return lv_color_mix(TC(ok), TC(warn), LV_OPA_50);     /* lime */
         case 'K': return lv_color_mix(TC(vfo), TC(text), LV_OPA_60);    /* water, lighter than WWFF's blue */
+        case 'X': return lv_color_mix(TC(alert), TC(digi), LV_OPA_50);
         default: return TC(text);
     }
 }
@@ -240,6 +246,7 @@ static const struct {
     {SCR_LOG, 0, "LOG", "log", "Activation\nlog"},
     {SCR_PROG, 'S'}, {SCR_PROG, 'P'}, {SCR_PROG, 'B'}, {SCR_PROG, 'H'}, {SCR_PROG, 'F'},
     {SCR_PROG, 'T'}, {SCR_PROG, 'C'}, {SCR_PROG, 'M'}, {SCR_PROG, 'L'}, {SCR_PROG, 'G'}, {SCR_PROG, 'K'},
+    {SCR_PROG, 'X'},
     {SCR_BANDS, 0, "BANDS", "bands", "Activity\nRBN, beacon"},
 };
 #define HOME_TILES ((int)(sizeof(tiles) / sizeof(tiles[0])))
@@ -394,11 +401,17 @@ static bool is_cw(void) {
     return m == radio_mode_cw || m == radio_mode_cwr;
 }
 
-/* The best position: radio GPS, else the QTH locator. src: "GPS", "QTH" */
+/* The best position: radio GPS, else the phone's (Panel page), else the QTH locator. src: "GPS", "PHONE", "QTH" */
 static bool position(double *lat, double *lon, const char **src, int *age) {
+    int acc;
+
     *age = 0;
     if (gps_last_fix(lat, lon, age) && *age < GPS_MAX_AGE) {
         *src = "GPS";
+        return true;
+    }
+    if (gps_phone_fix(lat, lon, age, &acc) && *age < GPS_MAX_AGE && acc <= PHONE_MAX_ACC) {
+        *src = "PHONE";
         return true;
     }
     const char *qth = station_qth();
@@ -648,7 +661,7 @@ static void near_result_cb(void *arg) {
 static void *near_thread(void *arg) {
     near_result_t *r = arg;
 
-    r->n = field_refs_near(REFS_PATH, r->prog, r->lat, r->lon, r->refs, MAX_NEAR);
+    r->n = field_refs_near(r->prog == 'X' ? XOTA_PATH : REFS_PATH, r->prog, r->lat, r->lon, r->refs, MAX_NEAR);
     scheduler_put(near_result_cb, r, sizeof(*r));
     free(r);
     return NULL;
@@ -687,7 +700,7 @@ static int tiles_near(double lat, double lon, const char *src, field_ref_t *out,
                 r->km = (float)qth_pos_dist(lat, lon, nlat, nlon);
                 snprintf(r->name, sizeof(r->name), "%s", dirs[dy + 1][dx + 1]);
             } else {
-                snprintf(r->name, sizeof(r->name), "here (%s)", !strcmp(src, "GPS") ? "GPS" : "locator");
+                snprintf(r->name, sizeof(r->name), "here (%s)", !strcmp(src, "QTH") ? "locator" : src);
             }
         }
     for (int i = 1; i < n; i++)                 /* by distance; here first, at 0 */
@@ -726,6 +739,13 @@ static void near_lookup(bool force) {
     if (stat(REFS_PATH, &sb) == 0 && (sb.st_mtime != refs_mtime || sb.st_ino != refs_ino)) {
         refs_mtime = sb.st_mtime;
         refs_ino   = sb.st_ino;
+        force      = true;
+    }
+    static time_t xota_mtime;       /* xota.tsv too: copied in by hand, Update list never writes it */
+    static ino_t  xota_ino;
+    if (stat(XOTA_PATH, &sb) == 0 && (sb.st_mtime != xota_mtime || sb.st_ino != xota_ino)) {
+        xota_mtime = sb.st_mtime;
+        xota_ino   = sb.st_ino;
         force      = true;
     }
     if (!force && near_prog == st.prog && near_n != -2 && fabs(lat - near_lat) < 0.003 && fabs(lon - near_lon) < 0.004)
@@ -1749,6 +1769,10 @@ static void spot_to(bool cluster) {
         msg_update_text_fmt("Set your callsign in Settings");
         return;
     }
+    if (st.ref.type == 'X') {
+        msg_update_text_fmt("XOTA is ours alone: no spot");
+        return;
+    }
     if (!prog_of(st.ref.type)->site) {
         /* On the DX cluster only. SOTA: SOTAwatch's API needs a client approved by SOTA, APRS2SOTA a
          * registration (RBNHole still spots a CW CQ after an alert on SOTAwatch). TOTA: its cluster takes
@@ -2120,7 +2144,7 @@ static bool set_ref(const char *in) {
         state_save();
         return true;
     }
-    bool found = field_refs_find(REFS_PATH, ref, &r);
+    bool found = field_refs_find(field_ref_prog(ref) == 'X' ? XOTA_PATH : REFS_PATH, ref, &r);
     char lh[16];
     if (!found && field_ref_lh(ref, lh, sizeof(lh)) && strcmp(lh, ref) && field_refs_find(REFS_PATH, lh, &r)) {
         snprintf(ref, sizeof(ref), "%s", lh);   /* a lighthouse as the list writes it: BEL-2 is BEL 002 */
