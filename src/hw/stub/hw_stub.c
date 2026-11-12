@@ -220,6 +220,23 @@ static float front_end_gain(bool pre, bool att) {
  * is drawn the other way up (the 1 kHz carrier shows 1 kHz below the dial in SSB): a carrier f above the centre
  * goes in at -f. Four levels in turn, so they can be told apart. Up to 1 kHz from the stream's edges: one left out
  * further in, the Fixed waterfall took it for gone there and kept nothing of it on the side tuned away from */
+/* HOST_STUB_ANTENNA=efhw40: the SWR in TX follows the frequency transmitted on as an end-fed half wave cut for 40 m
+ * would, to see the SWR scan's curves on a PC: resonant a little low on 40 m, then on its harmonics (20, 15, 10 m,
+ * wider and higher each time), 80 m only just, the bands between far off. In tenths, as the base gives it */
+static int antenna_swr(int32_t hz) {
+    static const struct { float f0, width; } res[] = {
+        {7.060f, 0.170f}, {14.150f, 0.420f}, {21.240f, 0.700f}, {28.380f, 1.300f}, {49.900f, 2.600f},
+    };
+    float mhz = hz / 1e6f, best = 25.0f;
+
+    for (size_t n = 0; n < sizeof(res) / sizeof(res[0]); n++) {
+        float x = (mhz - res[n].f0) / res[n].width;
+        best = fminf(best, 1.18f + 0.12f * n + 4.5f * x * x);
+    }
+    if (mhz < 4.0f) best = fminf(best, 2.6f + fabsf(mhz - 3.65f) * 8.0f);
+    return (int)lroundf(fminf(best, 25.5f) * 10.0f);
+}
+
 static void add_band(float _Complex *s, int32_t center, float gain) {
     const int64_t   reach = SAMPLE_RATE / 2 - 1000;
     static int      step = -1;
@@ -363,6 +380,32 @@ bool hw_flow_read(hw_pack_t *p) {
     }
     p->tx_power   = tx ? (uint8_t)(reg_f[HW_TXPWR_F] * 10.0f + 0.5f) : 0;
     p->vswr       = tx ? (uint8_t)swr : 0;
+    /* HOST_STUB_TXLOG=1: every change of what goes out (keyed or not, frequency, power) on stderr with the time in
+     * ms, to check a sweep's carrier from outside: where it sat, at what power, unkeyed between two bands */
+    static int txlog = -1;
+    static int last_tx = -1, last_hz, last_pwr;
+    if (txlog < 0) txlog = getenv("HOST_STUB_TXLOG") != NULL;
+    if (txlog) {
+        int cur = reg_i[HW_VFO_CUR] & 1;
+        int hz = vfo[reg_i[HW_SPLIT] ? !cur : cur].freq, pw = (int)(reg_f[HW_TXPWR_F] * 10.0f + 0.5f);
+        if (tx != last_tx || (tx && (hz != last_hz || pw != last_pwr))) {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            fprintf(stderr, "TXLOG %lld %d %d %d\n", (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000, tx ? 1 : 0, hz, pw);
+            last_tx = tx;
+            last_hz = hz;
+            last_pwr = pw;
+        }
+    }
+    static int antenna = -1;
+    if (antenna < 0) {
+        const char *e = getenv("HOST_STUB_ANTENNA");
+        antenna = e && !strcmp(e, "efhw40");
+    }
+    if (tx && antenna) {
+        int cur = reg_i[HW_VFO_CUR] & 1;
+        p->vswr = (uint8_t)antenna_swr(vfo[reg_i[HW_SPLIT] ? !cur : cur].freq);
+    }
     p->alc_level  = 0;
     /* On battery: 7.8 V and the base's 80 %, or HOST_STUB_BAT ("82,0": 8.2 V with the base at 0 %, #49's
      * full pack that its base never saw charged). A supply after them, and the charging flag: "79,66,138,1" a pack
