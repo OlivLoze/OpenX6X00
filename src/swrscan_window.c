@@ -40,6 +40,7 @@
 #include "msg.h"
 #include "board.h"
 #include "cfg/ham_bands.h"
+#include "remote_server.h"
 #include "scheduler.h"
 
 #include <math.h>
@@ -47,6 +48,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 #define POINTS      50      /* across a span under 1 MHz */
 #define POINTS_WIDE 100     /* from 1 MHz: one every 25 kHz at 2.5 MHz, so a narrow dip still shows (#107) */
@@ -63,6 +66,7 @@
 #define SEGS_MAX    16
 #define SEGS_PATH   BOARD_DATA "/swr_segments.tsv"
 #define CAL_PATH    BOARD_DATA "/swr_cal.tsv"
+#define SWEEPS_DIR  BOARD_DATA "/swr"           /* each sweep kept as CSV at Stop and at the end of a pass */
 
 typedef enum { R_VFO, R_ALL, R_BAND, R_SEG, R_CAL, R_COUNT } range_t;
 
@@ -208,12 +212,12 @@ static int next_ok_band(int from, int dir) {
     return -1;
 }
 
-/* The power's place in pwr_w[]: the overview's passes are at 1 W whatever Power says */
+/* The power's place in pwr_w[] */
 static int pwr_idx(void) {
-    return range == R_ALL ? 0 : pwr_i;
+    return pwr_i;
 }
 
-/* The power the sweep asks: the overview's passes stay at 1 W */
+/* The power the sweep asks */
 static float scan_pwr(void) {
     return pwr_w[pwr_idx()];
 }
@@ -394,6 +398,11 @@ static void draw_text_right(lv_draw_ctx_t *ctx, lv_draw_label_dsc_t *dsc, lv_coo
     draw_text(ctx, dsc, x - size.x, y_top + size.y / 2, 0, s, false);
 }
 
+static int cmp_float(const void *a, const void *b) {
+    float x = *(const float *)a, y = *(const float *)b;
+    return (x > y) - (x < y);
+}
+
 static lv_color_t swr_color(float v) {
     return v <= 1.5f ? TC(ok) : v <= 3.0f ? TC(warn) : TC(err);
 }
@@ -517,21 +526,34 @@ static void draw_overview(lv_draw_ctx_t *ctx) {
             p2.y = yt + h;
             lv_draw_line(ctx, &line, &p1, &p2);
         }
-        text.font = &sony_22;
+        /* in big the band's typical SWR (the median: a lone low reading does not speak for the band), under it the
+         * best and where */
+        float typ = NAN;
         if (isfinite(best) && !live) {
-            text.color = swr_color(best);
-            snprintf(s, sizeof(s), best >= 9.95f ? ">9" : "%.1f", best);
+            float v[POINTS_ALL];
+            int   k = 0;
+
+            for (int i = 0; i < POINTS_ALL; i++)
+                if (isfinite(c[i])) v[k++] = c[i];
+            qsort(v, k, sizeof(v[0]), cmp_float);
+            typ = k % 2 ? v[k / 2] : (v[k / 2 - 1] + v[k / 2]) / 2;
+        }
+        text.font = &sony_22;
+        if (isfinite(typ)) {
+            text.color = swr_color(typ);
+            snprintf(s, sizeof(s), typ >= 9.95f ? ">9" : "%.1f", typ);
         } else {
             text.color = TC(text_dim);
             snprintf(s, sizeof(s), live ? "..." : "-");
         }
         draw_text(ctx, &text, bx + bw / 2, 0, yt + h + 8, s, true);
-        if (isfinite(best) && !live) {
+        if (isfinite(typ)) {
             text.font = &sony_14;
             text.color = TC(text_dim);
-            snprintf(s, sizeof(s), "%d.%03d", (int)(best_f / 1000000), (int)(best_f / 1000 % 1000));
-            draw_text(ctx, &text, bx + bw / 2, 0, yt + h + 36, s, true);
+            snprintf(s, sizeof(s), best >= 9.95f ? "min >9" : "min %.1f", best);
+            draw_text(ctx, &text, bx + bw / 2, 0, yt + h + 34, s, true);
         }
+        (void)best_f;
     }
     text.font = &sony_16;
     text.color = TC(text_dim);
@@ -693,6 +715,87 @@ static void draw_cb(lv_event_t *e) {
     }
 }
 
+/* What a sweep is called, in the CSV's name and for the Panel */
+static void sweep_label(char *buf, size_t n, int band) {
+    if (band >= 0)
+        snprintf(buf, n, "%s", bands[band].name);
+    else if (range == R_SEG)
+        snprintf(buf, n, "%s", segs[sel_seg].name);
+    else if (range == R_BAND)
+        snprintf(buf, n, "%s", bands[sel_band].name);
+    else
+        snprintf(buf, n, "VFO-%d", (int)(f_center / 1000));
+    for (char *p = buf; *p; p++)
+        if (*p == ' ' || *p == '/') *p = '_';
+}
+
+/* A sweep to the Panel pages: "swr {"name", "lo", "hi", "w" (power), "v": [SWR or null]}" */
+static void sweep_send(int band, int32_t lo, int32_t hi, const float *v, int n) {
+    char *json = malloc(96 + n * 7), name[32];
+    int   k;
+
+    if (!json) return;
+    sweep_label(name, sizeof(name), band);
+    k = sprintf(json, "{\"name\":\"%s\",\"lo\":%d,\"hi\":%d,\"w\":%.0f,\"v\":[", name, (int)lo, (int)hi, scan_pwr());
+    for (int i = 0; i < n; i++)
+        k += isfinite(v[i]) ? sprintf(json + k, "%s%.2f", i ? "," : "", v[i]) : sprintf(json + k, "%snull", i ? "," : "");
+    strcpy(json + k, "]}");
+    remote_server_swr(json);
+    free(json);
+}
+
+/* SWEEPS_DIR/YYYYMMDD-HHMMSS_<name>.csv: one line a point, "frequency;band;SWR" (empty SWR where not read) */
+static void sweep_save(const char *name, int nb, const int *band, const int32_t *lo, const int32_t *hi,
+                       const float *const *v, const int *n) {
+    char       path[128];
+    time_t     now = time(NULL);
+    struct tm  tm;
+    FILE      *f;
+
+    gmtime_r(&now, &tm);
+    mkdir(SWEEPS_DIR, 0755);
+    snprintf(path, sizeof(path), SWEEPS_DIR "/%04d%02d%02d-%02d%02d%02d_%s.csv", tm.tm_year + 1900, tm.tm_mon + 1,
+             tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, name);
+    if (!(f = fopen(path, "w"))) return;
+    fprintf(f, "# SWR scan, %.0f W%s\nfrequency_hz;band;swr\n", scan_pwr(),
+            band_of(lo[0]) >= 0 && cal_ok[band_of(lo[0])][pwr_idx()] ? ", calibrated" : "");
+    for (int b = 0; b < nb; b++)
+        for (int i = 0; i < n[b]; i++) {
+            int32_t fr = lo[b] + (int64_t)(hi[b] - lo[b]) * i / (n[b] - 1);
+            if (isfinite(v[b][i]))
+                fprintf(f, "%d;%s;%.2f\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "", v[b][i]);
+            else
+                fprintf(f, "%d;%s;\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "");
+        }
+    fclose(f);
+}
+
+/* The pass's bands in one file */
+static void pass_save(void) {
+    int          nb = 0, band[NB], n[NB];
+    int32_t      lo[NB], hi[NB];
+    const float *v[NB];
+
+    for (int b = 0; b < NB; b++)
+        if (ov_done[b]) {
+            band[nb] = b; lo[nb] = bands[b].lo; hi[nb] = bands[b].hi; v[nb] = ov[b]; n[nb] = POINTS_ALL;
+            nb++;
+        }
+    if (nb) sweep_save(range == R_CAL ? "calibration" : "all-bands", nb, band, lo, hi, v, n);
+}
+
+/* The last whole sweep of a VFO, Band or Segment run, at Stop */
+static void run_save(void) {
+    char         name[32];
+    int          band[1] = {-1}, n[1] = {points};
+    int32_t      lo[1] = {f_low}, hi[1] = {f_high};
+    const float *v[1] = {ghost};
+
+    if (!have_ghost || pass_range()) return;
+    sweep_label(name, sizeof(name), -1);
+    sweep_save(name, 1, band, lo, hi, v, n);
+}
+
 static void rekey_cb(lv_timer_t *t) {
     rekey = NULL;
     if (!scanning) return;
@@ -724,6 +827,7 @@ static void pass_done(void) {
     bool cal = range == R_CAL;
     int  n = 0, bad = 0;
 
+    pass_save();
     run_cb(NULL);
     if (cal) {
         for (int b = 0; b < NB; b++) {
@@ -763,6 +867,7 @@ static void sweep_done(void) {
 
         memcpy(ov[cur_band], swr, sizeof(ov[cur_band]));
         ov_done[cur_band] = true;
+        sweep_send(cur_band, bands[cur_band].lo, bands[cur_band].hi, ov[cur_band], POINTS_ALL);
         nb = next_ok_band(cur_band, 1);
         if (nb <= cur_band) {
             pass_done();
@@ -776,6 +881,7 @@ static void sweep_done(void) {
     }
     int32_t from = freq_at(points - 1);
 
+    sweep_send(-1, f_low, f_high, swr, points);
     memcpy(ghost, swr, sizeof(ghost));
     have_ghost = true;
     for (int i = 0; i < POINTS_MAX; i++) swr[i] = NAN;
@@ -945,6 +1051,7 @@ static void plot_key_cb(lv_event_t *e) {
  * frequency) says why and moves nothing: it used to keep "Run" and move the VFO to the low edge in silence (#25) */
 static void run_cb(button_data_t *b) {
     if (scanning) {
+        run_save();
         scanning = false;
         if (rekey) {
             lv_timer_del(rekey);
@@ -1015,7 +1122,7 @@ static void pick_cb(button_data_t *b) {
 }
 
 static void power_cb(button_data_t *b) {
-    if (scanning || range == R_ALL) return;
+    if (scanning) return;
     pwr_i = (pwr_i + 1) % NP;
     buttons_refresh(&btn_power);
     lv_obj_invalidate(plot);
@@ -1051,8 +1158,6 @@ static const char *pick_label() {
 static const char *power_label() {
     static char s[20];
 
-    if (range == R_ALL)
-        return "Power:\n1 W";
     snprintf(s, sizeof(s), "Power:\n%.0f W", pwr_w[pwr_i]);
     return s;
 }
