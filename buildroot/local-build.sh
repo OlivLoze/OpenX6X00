@@ -250,11 +250,16 @@ echo "== XARA, the VARA-compatible Winlink modem (tools/xara/build.sh): one ARMv
 # toolchain (glibc 2.36, the GUI's), which a tree built for the first time makes here, the first step of its build
 XARA_CC=$BR/build/host/bin/arm-buildroot-linux-gnueabihf-gcc
 (cd $BR/build && make toolchain)
-XARA_BIN=$(CC=$XARA_CC bash $GUI/tools/xara/build.sh)
-[ -x "$XARA_BIN" ]
 sed -i "/_CONF_OPTS += -DXARA_BINARY=/d" $GUI_MK
-sed -i "s|^\$(eval \$(cmake-package))|${GUI_VAR}_CONF_OPTS += -DXARA_BINARY=$XARA_BIN\n&|" $GUI_MK
-grep -q "^${GUI_VAR}_CONF_OPTS += -DXARA_BINARY=$XARA_BIN" $GUI_MK
+# XARA's sources went from GitHub on 2026-11-08 ("xara is discontinued"): without them (and nothing in the cache)
+# the image goes without XARA, Winlink keeping ARDOP and Mercury, rather than not being built at all
+if XARA_BIN=$(CC=$XARA_CC bash $GUI/tools/xara/build.sh) && [ -x "$XARA_BIN" ]; then
+    sed -i "s|^\$(eval \$(cmake-package))|${GUI_VAR}_CONF_OPTS += -DXARA_BINARY=$XARA_BIN\n&|" $GUI_MK
+    grep -q "^${GUI_VAR}_CONF_OPTS += -DXARA_BINARY=$XARA_BIN" $GUI_MK
+else
+    echo "!! XARA could not be built (its sources are no longer published): the image is built without it"
+    if [ -n "$GITHUB_ACTIONS" ]; then echo "::warning::XARA could not be built (its sources are no longer published): the image is built without it"; fi
+fi
 
 echo "== Build"
 cd $BR/build
