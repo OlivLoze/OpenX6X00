@@ -27,6 +27,10 @@ XARA_VER=0.1.3
 # The signed tag v0.1.3 (e32422a9) is this commit; the tarballs below are the release's, built from it
 XARA_COMMIT=09a9201381b00499ada9d9c816bd05bb8f175705
 XARA_URL=https://github.com/x0rro/xara/releases/download/v$XARA_VER
+# Forks that kept the release's commit after its repository went (2026-11-08), and the SHA-256 of GitHub's archive of
+# that commit from them (the same from both)
+XARA_MIRRORS=(anelson/xara 9M2PJU/xara)
+XARA_MIRROR_SHA256=46a2c97205279a4d20c76a052049c37039e1ae1cc2a374d9e27cb6eb28c1c8d5
 # The release's SHA256SUMS (2026-10-31)
 XARA_SRC_SHA256=34f6fce5af2c32eca07359301ba2f58a49d1cc534b2a25b14c9606dcf84fc4cb
 XARA_VENDOR_SHA256=dbac90dc109f2f6ab4d7840cf04e735f784fedd878d370f2d501b0fde8a8ae80
@@ -119,15 +123,29 @@ fi
     && [ -d "$RUST/lib/rustlib/$TARGET/lib" ] \
     || { echo "tools/xara/build.sh: $RUST is not Rust $RUST_VER with $TARGET"; exit 1; }
 
-fetch "$XARA_URL/xara-$XARA_VER.tar.xz" "$DL/xara-$XARA_VER.tar.xz" $XARA_SRC_SHA256
-fetch "$XARA_URL/xara-$XARA_VER-vendor.tar.xz" "$DL/xara-$XARA_VER-vendor.tar.xz" $XARA_VENDOR_SHA256
-
 SRC=$(mktemp -d "$CACHE/xara/src.XXXXXX")
 trap 'rm -rf "$SRC"' EXIT
 echo "== XARA $XARA_VER ($XARA_COMMIT)"
-# The source, and the crates it depends on in vendor/ with the .cargo/config.toml that points cargo at them
-tar xJf "$DL/xara-$XARA_VER.tar.xz" -C "$SRC"
-tar xJf "$DL/xara-$XARA_VER-vendor.tar.xz" -C "$SRC"
+if (fetch "$XARA_URL/xara-$XARA_VER.tar.xz" "$DL/xara-$XARA_VER.tar.xz" $XARA_SRC_SHA256 \
+    && fetch "$XARA_URL/xara-$XARA_VER-vendor.tar.xz" "$DL/xara-$XARA_VER-vendor.tar.xz" $XARA_VENDOR_SHA256); then
+    # The source, and the crates it depends on in vendor/ with the .cargo/config.toml that points cargo at them
+    tar xJf "$DL/xara-$XARA_VER.tar.xz" -C "$SRC"
+    tar xJf "$DL/xara-$XARA_VER-vendor.tar.xz" -C "$SRC"
+else
+    # The repository and its releases went on 2026-11-08 ("xara is discontinued"). The same commit from a fork that
+    # kept it (GitHub's archive of it, pinned), the crates vendored by cargo from Cargo.lock's checksums
+    for m in "${XARA_MIRRORS[@]}"; do
+        (fetch "https://codeload.github.com/$m/tar.gz/$XARA_COMMIT" "$DL/xara-$XARA_COMMIT.tar.gz" $XARA_MIRROR_SHA256) \
+            && break
+    done
+    [ -f "$DL/xara-$XARA_COMMIT.tar.gz" ] || { echo "tools/xara/build.sh: no copy of XARA $XARA_VER found"; exit 1; }
+    mkdir "$SRC/xara-$XARA_VER"
+    tar xzf "$DL/xara-$XARA_COMMIT.tar.gz" -C "$SRC/xara-$XARA_VER" --strip-components=1
+    (cd "$SRC/xara-$XARA_VER" && "$RUST/bin/cargo" vendor --locked vendor > /dev/null \
+        && mkdir -p .cargo \
+        && printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' \
+            > .cargo/config.toml)
+fi
 cd "$SRC/xara-$XARA_VER"
 for p in "${PATCHES[@]}"; do
     echo "   $(basename "$p")"
