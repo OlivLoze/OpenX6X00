@@ -65,7 +65,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     usb_devices.cpp knob_info.cpp
     wr12.c pa_bias.c
     dialog_wspr.c app_frame.c
-    dialog_field.c
+    dialog_field.c field_map.c
     dialog_bands.c
     dialog_snake.c
     remote_server.c
