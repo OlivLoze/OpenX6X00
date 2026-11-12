@@ -56,6 +56,7 @@
 #define TOP_H       34      /* the frequencies above the grid */
 #define BOTTOM_H    10
 #define REKEY_MS    400     /* between two bands: unkeyed, the relays set, then the carrier again */
+#define SETTLE_N    3       /* readings left out after the carrier comes: the first read 1.0 before the power is up */
 #define GUARD_SWR   3.0f    /* over 1 W: three readings over it in a row bring the power back to 1 W */
 #define GUARD_N     3
 #define CAL_MAX_G   0.2f    /* the reflection a dummy load may show: SWR 1.5 */
@@ -126,6 +127,7 @@ static int      sel_seg;
 static int      cur_band;           /* the band the All bands or Calibrate pass is on */
 static int      pwr_i;              /* pwr_w[], back to 1 W at every opening */
 static int      guard_n;
+static int      settle_n;           /* readings still to leave out (SETTLE_N) */
 static bool     band_ok[NB];        /* the radio may transmit over all of it */
 static float    ov[NB][POINTS_ALL]; /* the All bands pass, kept for the overview after a closer look */
 static bool     ov_done[NB];
@@ -694,6 +696,7 @@ static void draw_cb(lv_event_t *e) {
 static void rekey_cb(lv_timer_t *t) {
     rekey = NULL;
     if (!scanning) return;
+    settle_n = SETTLE_N;
     if (!radio_start_swrscan(freq_at(pos))) dialog_swrscan_give_up("SWR scan: could not key the next band");
 }
 
@@ -783,6 +786,10 @@ static void sweep_done(void) {
 /* One reading at the current point, then on to the next frequency */
 static void scan_step(float v) {
     if (rekey || pos >= points) return;
+    if (settle_n > 0) {         /* the carrier just came: the point read again once the power is up */
+        settle_n--;
+        return;
+    }
     if (v < 1.0f) v = NAN;      /* no reading: no power came out (the band's first packets, a base that does not say) */
     v = corrected(v, freq_at(pos));
     swr[pos] = v;
@@ -955,6 +962,7 @@ static void run_cb(button_data_t *b) {
         reset_scan();
         if (pass_range()) memset(ov_done, 0, sizeof(ov_done));
         radio_swrscan_power(scan_pwr());
+        settle_n = SETTLE_N;
         scanning = radio_start_swrscan(freq_at(pos));
         if (!scanning) mem_load(MEM_BACKUP_ID);
     }
