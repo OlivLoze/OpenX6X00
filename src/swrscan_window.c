@@ -60,6 +60,7 @@
 #define BOTTOM_H    10
 #define REKEY_MS    400     /* between two bands: unkeyed, the relays set, then the carrier again */
 #define SETTLE_N    4       /* readings left out after the carrier comes: the first two or three read 1.0 to 2, rising */
+#define SETTLE_ALIKE 6      /* then at most that many more, until two in a row agree within 0.15 */
 #define GUARD_SWR   3.0f    /* over 1 W: three readings over it in a row bring the power back to 1 W */
 #define GUARD_N     3
 #define CAL_MAX_G   0.2f    /* the reflection a dummy load may show: SWR 1.5 */
@@ -134,6 +135,9 @@ static int      cur_band;           /* the band the All bands or Calibrate pass 
 static int      pwr_i;              /* pwr_w[], back to 1 W at every opening */
 static int      guard_n;
 static int      settle_n;           /* readings still to leave out (SETTLE_N) */
+static float    settle_v;           /* then the first point waits for two readings alike: the base's SWR lags its
+                                     * power by a reading (2026-11-13, an EFHW: 1.0 at 0.5 W out, then 3.4) */
+static int      settle_alike;       /* readings left to wait for them, 0 once the band's first point is read */
 static bool     band_ok[NB];        /* the radio may transmit over all of it */
 static float    ov[NB][POINTS_ALL]; /* the All bands pass, kept for the overview after a closer look */
 static float    ov_pwr[NB][POINTS_ALL];
@@ -820,6 +824,8 @@ static void rekey_cb(lv_timer_t *t) {
     rekey = NULL;
     if (!scanning) return;
     settle_n = SETTLE_N;
+    settle_v = NAN;
+    settle_alike = SETTLE_ALIKE;
     if (!radio_start_swrscan(freq_at(pos))) dialog_swrscan_give_up("SWR scan: could not key the next band");
 }
 
@@ -917,6 +923,13 @@ static void scan_step(float v, float p) {
     if (settle_n > 0) {         /* the carrier just came: the point read again once the power is up */
         settle_n--;
         return;
+    }
+    if (settle_alike > 0) {
+        bool alike = isfinite(settle_v) && fabsf(v - settle_v) <= 0.15f;
+
+        settle_v = v;
+        if (!alike && --settle_alike > 0) return;
+        settle_alike = 0;
     }
     if (v < 1.0f) v = NAN;      /* no reading: no power came out (the band's first packets, a base that does not say) */
     v = corrected(v, freq_at(pos));
@@ -1093,6 +1106,8 @@ static void run_cb(button_data_t *b) {
         if (pass_range()) memset(ov_done, 0, sizeof(ov_done));
         radio_swrscan_power(scan_pwr());
         settle_n = SETTLE_N;
+    settle_v = NAN;
+    settle_alike = SETTLE_ALIKE;
         scanning = radio_start_swrscan(freq_at(pos));
         if (!scanning) mem_load(MEM_BACKUP_ID);
     }
