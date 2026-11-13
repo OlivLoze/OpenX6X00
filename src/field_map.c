@@ -311,6 +311,7 @@ static void draw_cb(lv_event_t *e) {
     int    tx1 = (int)floor((ox + w) / TILE), ty1 = (int)floor((oy + h) / TILE);
     lv_draw_img_dsc_t  img;
     lv_draw_rect_dsc_t empty;
+    int                shown = 0;
 
     lv_draw_img_dsc_init(&img);
     img.recolor = lv_color_black();
@@ -328,9 +329,10 @@ static void draw_cb(lv_event_t *e) {
             a.x2 = a.x1 + TILE - 1;
             a.y2 = a.y1 + TILE - 1;
             const lv_img_dsc_t *d = tile(z, tx, ty);
-            if (d)
+            if (d) {
                 lv_draw_img(ctx, &img, &a, d);
-            else
+                shown++;
+            } else
                 lv_draw_rect(ctx, &empty, &a);
         }
 
@@ -437,6 +439,18 @@ static void draw_cb(lv_event_t *e) {
     if (ov1[0]) {
         text_box(ctx, area.x1 + 10, area.y1 + 8, ov1, &sony_20, TC(text_head));
         if (ov2[0]) text_box(ctx, area.x1 + 10, area.y1 + 36, ov2, &sony_18, TC(text_value));
+    }
+
+    /* not one tile in the view: the place is outside the area the card was made for, say so rather than show black */
+    if (!shown) {
+        static const char *l1 = "No map here", *l2 = "outside the area of the tiles on the card";
+        lv_point_t         s1, s2;
+        lv_coord_t         mx = area.x1 + w / 2, my = area.y1 + h / 2 + 34;
+
+        lv_txt_get_size(&s1, l1, &sony_20, 0, 0, LV_COORD_MAX, 0);
+        lv_txt_get_size(&s2, l2, &sony_16, 0, 0, LV_COORD_MAX, 0);
+        text_box(ctx, mx - s1.x / 2, my, l1, &sony_20, TC(text_head));
+        text_box(ctx, mx - s2.x / 2, my + 28, l2, &sony_16, TC(text_dim));
     }
 #undef SX
 #undef SY
