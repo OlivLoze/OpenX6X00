@@ -87,7 +87,7 @@ int field_refs_near(const char *path, char type, double lat, double lon, field_r
     while (read_line(f, line, sizeof(line))) {
         field_ref_t r;
 
-        if (line[0] != type || !field_ref_parse(line, &r) || isnan(r.lat) || isnan(r.lon))
+        if ((type != '*' && line[0] != type) || !field_ref_parse(line, &r) || isnan(r.lat) || isnan(r.lon))
             continue;
         r.km = km_between(lat, lon, r.lat, r.lon);
         if (n == max && r.km >= out[n - 1].km)

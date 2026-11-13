@@ -29,7 +29,7 @@ typedef struct {
 /* "S\tI/LO-123\tName\t45.1\t9.2\t1200\t4" -> r (the line is cut); false when malformed */
 bool field_ref_parse(char *line, field_ref_t *r);
 
-/* The max nearest references of the type ('P', 'S', 'B', 'H'...), nearest first, those with no position left out;
+/* The max nearest references of the type ('P', 'S', 'B', 'H'..., '*' any), nearest first, those with no position left out;
  * returns the count, -1 when the file can't be read */
 int field_refs_near(const char *path, char type, double lat, double lon, field_ref_t *out, int max);
 
