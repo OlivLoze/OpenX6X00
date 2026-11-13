@@ -1106,8 +1106,8 @@ static void run_cb(button_data_t *b) {
         if (pass_range()) memset(ov_done, 0, sizeof(ov_done));
         radio_swrscan_power(scan_pwr());
         settle_n = SETTLE_N;
-    settle_v = NAN;
-    settle_alike = SETTLE_ALIKE;
+        settle_v = NAN;
+        settle_alike = SETTLE_ALIKE;
         scanning = radio_start_swrscan(freq_at(pos));
         if (!scanning) mem_load(MEM_BACKUP_ID);
     }
