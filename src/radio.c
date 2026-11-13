@@ -2806,8 +2806,13 @@ static bool radio_tick() {
                     break;
                 swrscan_peak    = 0;            /* read: dialog_swrscan_update moves to the next point */
                 swrscan_move_ms = swrscan_up_ms = now_time;
+#else
+                /* Not keyed yet, or keyed without power out: the base still reports an SWR there, 1.0 (2026-11-13,
+                 * an EFHW: each band's first three readings 1.0 after the settle, then a 0, then the real 3.3) */
+                if (!pack->tx || !pack->tx_power)
+                    break;
 #endif
-                dialog_swrscan_update(pack->vswr * 0.1f);
+                dialog_swrscan_update(pack->vswr * 0.1f, pack->tx_power * 0.1f);
                 break;
 
             case RADIO_POWEROFF:

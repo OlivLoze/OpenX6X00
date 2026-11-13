@@ -117,7 +117,9 @@ static const struct { const char *name; int32_t lo, hi; } segs_default[] = {
 
 static lv_obj_t *plot;
 static float    swr[POINTS_MAX];        /* this sweep, NAN where not read (yet, or stepped over) */
+static float    pwr[POINTS_MAX];        /* the power out at each reading, W: in the saved sweeps */
 static float    ghost[POINTS_MAX];      /* the sweep before, drawn faintly */
+static float    ghost_pwr[POINTS_MAX];
 static bool     have_ghost;
 static uint16_t points = POINTS;        /* in this sweep */
 static uint16_t pos;
@@ -134,6 +136,7 @@ static int      guard_n;
 static int      settle_n;           /* readings still to leave out (SETTLE_N) */
 static bool     band_ok[NB];        /* the radio may transmit over all of it */
 static float    ov[NB][POINTS_ALL]; /* the All bands pass, kept for the overview after a closer look */
+static float    ov_pwr[NB][POINTS_ALL];
 static bool     ov_done[NB];
 static float    cal_g[NB][NP];      /* the bridge's reflection on the dummy load, taken off the readings */
 static bool     cal_ok[NB][NP];
@@ -763,7 +766,7 @@ static void sweep_send(int band, int32_t lo, int32_t hi, const float *v, int n) 
 
 /* SWEEPS_DIR/YYYYMMDD-HHMMSS_<name>.csv: one line a point, "frequency;band;SWR" (empty SWR where not read) */
 static void sweep_save(const char *name, int nb, const int *band, const int32_t *lo, const int32_t *hi,
-                       const float *const *v, const int *n) {
+                       const float *const *v, const float *const *p, const int *n) {
     char       path[128];
     time_t     now = time(NULL);
     struct tm  tm;
@@ -774,15 +777,15 @@ static void sweep_save(const char *name, int nb, const int *band, const int32_t 
     snprintf(path, sizeof(path), SWEEPS_DIR "/%04d%02d%02d-%02d%02d%02d_%s.csv", tm.tm_year + 1900, tm.tm_mon + 1,
              tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, name);
     if (!(f = fopen(path, "w"))) return;
-    fprintf(f, "# SWR scan, %.0f W%s\nfrequency_hz;band;swr\n", scan_pwr(),
+    fprintf(f, "# SWR scan, %.0f W%s\nfrequency_hz;band;swr;power_w\n", scan_pwr(),
             band_of(lo[0]) >= 0 && cal_ok[band_of(lo[0])][pwr_idx()] ? ", calibrated" : "");
     for (int b = 0; b < nb; b++)
         for (int i = 0; i < n[b]; i++) {
             int32_t fr = lo[b] + (int64_t)(hi[b] - lo[b]) * i / (n[b] - 1);
             if (isfinite(v[b][i]))
-                fprintf(f, "%d;%s;%.2f\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "", v[b][i]);
+                fprintf(f, "%d;%s;%.2f;%.1f\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "", v[b][i], p[b][i]);
             else
-                fprintf(f, "%d;%s;\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "");
+                fprintf(f, "%d;%s;;\n", (int)fr, band[b] >= 0 ? bands[band[b]].name : "");
         }
     fclose(f);
 }
@@ -791,14 +794,14 @@ static void sweep_save(const char *name, int nb, const int *band, const int32_t 
 static void pass_save(void) {
     int          nb = 0, band[NB], n[NB];
     int32_t      lo[NB], hi[NB];
-    const float *v[NB];
+    const float *v[NB], *p[NB];
 
     for (int b = 0; b < NB; b++)
         if (ov_done[b]) {
-            band[nb] = b; lo[nb] = bands[b].lo; hi[nb] = bands[b].hi; v[nb] = ov[b]; n[nb] = POINTS_ALL;
+            band[nb] = b; lo[nb] = bands[b].lo; hi[nb] = bands[b].hi; v[nb] = ov[b]; p[nb] = ov_pwr[b]; n[nb] = POINTS_ALL;
             nb++;
         }
-    if (nb) sweep_save(range == R_CAL ? "calibration" : "all-bands", nb, band, lo, hi, v, n);
+    if (nb) sweep_save(range == R_CAL ? "calibration" : "all-bands", nb, band, lo, hi, v, p, n);
 }
 
 /* The last whole sweep of a VFO, Band or Segment run, at Stop */
@@ -806,11 +809,11 @@ static void run_save(void) {
     char         name[32];
     int          band[1] = {-1}, n[1] = {points};
     int32_t      lo[1] = {f_low}, hi[1] = {f_high};
-    const float *v[1] = {ghost};
+    const float *v[1] = {ghost}, *p[1] = {ghost_pwr};
 
     if (!have_ghost || pass_range()) return;
     sweep_label(name, sizeof(name), -1);
-    sweep_save(name, 1, band, lo, hi, v, n);
+    sweep_save(name, 1, band, lo, hi, v, p, n);
 }
 
 static void rekey_cb(lv_timer_t *t) {
@@ -883,6 +886,7 @@ static void sweep_done(void) {
         int nb;
 
         memcpy(ov[cur_band], swr, sizeof(ov[cur_band]));
+        memcpy(ov_pwr[cur_band], pwr, sizeof(ov_pwr[cur_band]));
         ov_done[cur_band] = true;
         sweep_send(cur_band, bands[cur_band].lo, bands[cur_band].hi, ov[cur_band], POINTS_ALL);
         nb = next_ok_band(cur_band, 1);
@@ -900,6 +904,7 @@ static void sweep_done(void) {
 
     sweep_send(-1, f_low, f_high, swr, points);
     memcpy(ghost, swr, sizeof(ghost));
+    memcpy(ghost_pwr, pwr, sizeof(ghost_pwr));
     have_ghost = true;
     for (int i = 0; i < POINTS_MAX; i++) swr[i] = NAN;
     pos = next_point(0);
@@ -907,7 +912,7 @@ static void sweep_done(void) {
 }
 
 /* One reading at the current point, then on to the next frequency */
-static void scan_step(float v) {
+static void scan_step(float v, float p) {
     if (rekey || pos >= points) return;
     if (settle_n > 0) {         /* the carrier just came: the point read again once the power is up */
         settle_n--;
@@ -916,6 +921,7 @@ static void scan_step(float v) {
     if (v < 1.0f) v = NAN;      /* no reading: no power came out (the band's first packets, a base that does not say) */
     v = corrected(v, freq_at(pos));
     swr[pos] = v;
+    pwr[pos] = p;
     if (scan_pwr() > pwr_w[0] && isfinite(v) && v > GUARD_SWR) {
         if (++guard_n >= GUARD_N) {     /* the sweep goes on at 1 W: a band's edges often read over 3 */
             pwr_i = 0;
@@ -1184,14 +1190,18 @@ static const char *scale_label() {
 }
 
 static void step_cb(void *arg) {
+    float *r = arg;
+
     atomic_store(&step_due, false);
-    if (scanning) scan_step(*(float *)arg);
+    if (scanning) scan_step(r[0], r[1]);
 }
 
 /* The radio thread's reading: the step, the moves and the stops it may lead to go on the GUI thread, one at a time */
-void dialog_swrscan_update(float vswr) {
+void dialog_swrscan_update(float vswr, float power) {
+    float r[2] = {vswr, power};
+
     if (!scanning || atomic_exchange(&step_due, true)) return;
-    if (!scheduler_put(step_cb, &vswr, sizeof(vswr))) atomic_store(&step_due, false);
+    if (!scheduler_put(step_cb, r, sizeof(r))) atomic_store(&step_due, false);
 }
 
 void dialog_swrscan_stop(int32_t freq) {

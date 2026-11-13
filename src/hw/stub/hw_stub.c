@@ -407,12 +407,16 @@ bool hw_flow_read(hw_pack_t *p) {
         p->vswr = (uint8_t)antenna_swr(vfo[reg_i[HW_SPLIT] ? !cur : cur].freq);
     }
     /* HOST_STUB_SWR_RAMP=1: as the X6100 does at 1 W, the first readings after the key low while the power comes up:
-     * two at 1.0, then two half way */
+     * two at 1.0, then two half way; before them, three keyed without power out (still 1.0) */
     static int ramp = -1, keyed;
     if (ramp < 0) ramp = getenv("HOST_STUB_SWR_RAMP") != NULL;
     keyed = tx ? keyed + 1 : 0;
-    if (ramp && tx && keyed <= 4)
-        p->vswr = keyed <= 2 ? 10 : (uint8_t)((10 + p->vswr) / 2);
+    if (ramp && tx && keyed <= 3) {
+        p->vswr = 10;
+        p->tx_power = 0;
+    } else if (ramp && tx && keyed <= 7) {
+        p->vswr = keyed <= 5 ? 10 : (uint8_t)((10 + p->vswr) / 2);
+    }
     p->alc_level  = 0;
     /* On battery: 7.8 V and the base's 80 %, or HOST_STUB_BAT ("82,0": 8.2 V with the base at 0 %, #49's
      * full pack that its base never saw charged). A supply after them, and the charging flag: "79,66,138,1" a pack
