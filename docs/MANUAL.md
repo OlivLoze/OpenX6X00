@@ -2664,24 +2664,61 @@ lay flat at 1.0 on the green band, as if nothing had been drawn.
   few seconds. Quick reads on some radios and stays flat at 1.0 on others
   (with the stock firmware too): on a new antenna, compare it once with a
   Carrier sweep. The choice is kept.
-- Span: 50, 100, 200, 500, 1000, 1500, 2000 or 2500 kHz (not while scanning).
-  Scale: Log or Linear. A sweep takes 50 readings across the span (25 with
-  the X6200's Carrier), 100 from 1000 kHz up (one every 25 kHz at 2500 kHz),
-  so a wide one takes longer. Only the points read so far are drawn.
-- The sweep stays inside the band as the band list has it (the web
-  configurator's Bands page), which follows the IARU region of the band
-  plan: in Region 1 2500 kHz on 40 m sweeps 7.000 to 7.200 MHz (40m CW and
-  40m SSB), 80 m 3.500 to 3.800, 30 m 50 kHz at most. The scan picks its own
-  frequencies, so it keeps to your region's band; a frequency you tune
-  yourself keeps the wider table of
-  [Amateur bands only](#amateur-bands-only). A band hidden from the band
-  list sweeps the table's edges. The frequencies on the plot show the sweep,
-  the Span button the span asked; the readings follow the sweep's width (100
-  from 1000 kHz of it). Up to v0.3.8 a wide span sent the carrier outside
-  the band, as the stock firmware's sweep does; with TX outside ham bands on
-  it still does. Up to v0.3.9 it kept to the table, the union of the three
-  regions: in Region 1 40 m went to 7.300 MHz, into the 41 m broadcast band,
-  and 80 m to 4.000.
+- Range (not while scanning) picks what is swept:
+  - VFO: the span around the TX frequency. Span: +/-10, 25, 50, 100, 250,
+    500, 750, 1000 or 1250 kHz (20 kHz to trim an antenna by eye, up to
+    2500 kHz), and +/-2500 and 5000 kHz with TX outside ham bands on (below).
+    The sweep stays inside the band as the band list has it, which follows
+    the IARU region (below): in Region 1 2500 kHz on 40 m sweeps 7.000 to
+    7.200 MHz, 30 m 50 kHz at most; the frequencies on the plot show the
+    sweep, the Span button the span asked. Up to v0.3.8 a wide span sent the
+    carrier outside the band, as the stock firmware's sweep does.
+  - All bands: one pass at 1 W over every amateur band the radio may transmit
+    on, 160 to 6 m, 32 readings each, drawn side by side with each band's
+    best SWR and where. MFK moves the cursor over the bands; a press (or the
+    Zoom button) opens the band chosen in the Band range, a second press goes
+    back to the overview, the pass kept.
+  - Band: one band whole, 160 readings, over and over.
+  - Segment: a part of a band, over and over. The segments are read from
+    `/mnt/swr_segments.tsv`, one per line, "name<TAB>low kHz<TAB>high kHz"
+    (`#` a comment); a line outside a band, or wider than it, is left out.
+    Without the file: 40 m CW, 40 m SSB, 20 m CW, 20 m SSB, 15 m SSB, 10 m SSB
+    (no FT8 window: the carrier would come back on it every pass).
+  - Calibrate: the All bands pass with a 50 ohm dummy load on the antenna
+    socket. What the bridge reads there is kept per band and power in
+    `/mnt/swr_cal.tsv` and taken off the readings after (the reflection
+    coefficient's), "cal" on the plot; a band that reads over 1.5 has no load
+    on it (an antenna, an open socket) and keeps what it had.
+- The bands are the widest any licence has (`cfg/ham_bands.c`: 40 m to 7.3,
+  80 m to 4.0, 60 m 5.25 to 5.45, 6 m to 54 MHz), for the radio taken on
+  expeditions: what the licence of the day covers is the operator's to know.
+- Between two bands the carrier stops, and comes back 0.4 s later on the next:
+  the filter relays never switch under power.
+- The carrier steps over the NCDXF beacons, the WSPR windows and the 10 m and
+  6 m beacon segments.
+- VFO, Band and Segment sweep over and over, the sweep before drawn faintly
+  under the new one: an antenna trimmed shows at once. The plot gives the best
+  SWR and its frequency (the middle of a flat bottom: the base reads in
+  tenths) and how wide the antenna is under 2:1.
+- Power (VFO, Band, Segment): 1 W, or 2, 3 or 5 W for a closer look (PWR
+  lower still wins); All bands stays at 1 W, and the power is back to 1 W at
+  every opening. Over 1 W, three readings over 3 in a row bring the power back
+  to 1 W ("SWR over 3: power back to 1 W") and the sweep goes on there.
+- Scale: Log or Linear.
+- With Settings > TX Cal > TX outside ham bands on, the VFO range goes on
+  across the bands, up to +/-5000 kHz. The plot says OUT OF BAND TX; outside
+  the bands the carrier stops between every two readings (the filters may
+  change anywhere there), so a 10 MHz sweep takes about a minute on the
+  X6100; and it never sits on the maritime distress and safety frequencies
+  (RR Appendix 15, the 2182 kHz guard band whole), the HF search and rescue
+  ones (3023, 5680 kHz), the time signal bands or the radio astronomy ones
+  (13.36-13.41, 25.55-25.67 MHz). One reading every 62.5 kHz: where the
+  resonances are, not how deep.
+- Not tried on a radio yet: the All bands pass, the powers over 1 W and the
+  calibration were checked on the PC build (`HOST_STUB_ANTENNA=efhw40` gives
+  its stub an end-fed half wave's SWR, `HOST_STUB_TXLOG=1` logs every change
+  of what it transmits); on the X6200, where each reading waits about a
+  second, an All bands pass would take several minutes.
 - The sweep stays where the radio transmits. Near the edge of HF (0.1 and
   55 MHz), of a transverter's range, of the amateur band or of the TX range
   (South Korea's or the own list's) the span moves

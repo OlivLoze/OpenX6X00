@@ -58,7 +58,8 @@
  *  server uses them) and tells the panel clients what changed every 50 ms. The apps: the FT8
  *  list's rows go out as they come ("ft8r {...}", the last 48 to a page that opens later), the
  *  app's state when it changes ("ft8 {...}"), the CW decoder's text ("cw \"...\""); "ft8
- *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "pos LAT
+ *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, each SWR scan
+ *  sweep goes out as "swr {name, lo, hi, w, v: [...]}" (remote_server_swr), "pos LAT
  *  LON [ACC]" gives the radio the phone's position (degrees, the accuracy in metres; Field Ops uses
  *  it when no GPS is plugged in, operate without control: it touches nothing of the RF side), "log
  *  CALL|RSTS|RSTR|NAME" writes the day's log as the CW keyboard does ("logged ok|no"). "logq ID
@@ -1319,6 +1320,17 @@ void remote_server_ft8_row(const void *cell) {
         return;
     ft8_row_line(line, sizeof(line), id, cd);
     panel_broadcast(line);
+}
+
+/* LVGL thread (the SWR scan's): a sweep to the Panel pages that are open */
+void remote_server_swr(const char *json) {
+    char *line;
+
+    if (!atomic_load(&npanel) || !(line = malloc(strlen(json) + 5)))
+        return;
+    sprintf(line, "swr %s", json);
+    panel_broadcast(line);
+    free(line);
 }
 
 /* Any thread (the CW decoder's) */

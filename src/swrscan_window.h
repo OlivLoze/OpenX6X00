@@ -17,7 +17,7 @@ extern "C" {
 extern dialog_t *dialog_swrscan;
 
 /* radio.c: one SWR reading from the base while scanning */
-void dialog_swrscan_update(float vswr);
+void dialog_swrscan_update(float vswr, float power);
 /* A scan running stops as Stop does, the screen saying "Scan stopped on <freq>" and why (radio_say_no_tx: the radio
  * moved where it may not transmit, #121). LVGL thread */
 void dialog_swrscan_stop(int32_t freq);

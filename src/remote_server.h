@@ -51,6 +51,9 @@ void remote_flush(const lv_area_t *area, const lv_color_t *color_p);
 void remote_server_ft8_row(const void *cell);
 void remote_server_cw_text(const char *text);
 
+/* For the Panel page: a sweep of the SWR scan as JSON ("swr {...}"), LVGL thread */
+void remote_server_swr(const char *json);
+
 #ifdef __cplusplus
 }
 #endif

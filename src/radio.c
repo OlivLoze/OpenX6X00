@@ -304,15 +304,19 @@ static void power_key_cb(void *arg) {
  * (TCI's drive, the Panel's PWR, the X6200's battery cap) came through on_pwr_change, and the sweep went on at PWR.
  * On the X6200 also under a lower PWR, as the stock firmware (its DialogSwrScanner sets 1.0 W whatever PWR is): the
  * base's bridge has a diode detector, and below 1 W it reads low (EFHW on 80 m, SWR 4 on a NanoVNA: 2.15-2.4 at 1 W,
- * 1.9-2.15 at 0.5 W, a flat 1.0 at 0.1 W, the "empty" scan of #212) */
-#define SWRSCAN_PWR_W   1.0f
+ * 1.9-2.15 at 0.5 W, a flat 1.0 at 0.1 W, the "empty" scan of #212). On the X6100 a band's closer look may ask
+ * more, up to SWRSCAN_PWR_MAX_W (radio_swrscan_power); under the lock */
+#define SWRSCAN_PWR_W       1.0f
+#define SWRSCAN_PWR_MAX_W   5.0f
+
+static float swrscan_pwr_w = SWRSCAN_PWR_W;
 
 static void set_txpwr(float w) {
     txpwr_asked = w;
 #ifdef BOARD_X6200
     if (atomic_load(&state) == RADIO_SWRSCAN) w = SWRSCAN_PWR_W;
 #else
-    if (atomic_load(&state) == RADIO_SWRSCAN && w > SWRSCAN_PWR_W) w = SWRSCAN_PWR_W;
+    if (atomic_load(&state) == RADIO_SWRSCAN && w > swrscan_pwr_w) w = swrscan_pwr_w;
 #endif
     /* An app open: its cap, but not over a TUNE's own power (#87), which holds the power to it instead */
     if (digi_cap && tune_cap <= 0.0f && w > TX_PLAYER_MAX_PWR_W) w = TX_PLAYER_MAX_PWR_W;
@@ -939,8 +943,8 @@ bool radio_start_swrscan(int32_t from) {
     radio_set_tx_freq(from);
     cparam_i_set(cfg_cur_mode, SWRSCAN_MODE);
     radio_lock();
-    /* 1 W, held there by set_txpwr (SWRSCAN_PWR_W); a transverter's limit if lower, and on the X6100 a lower PWR.
-     * ponytail: fixed 1 W, make it a setting if the bridge reads poorly that low */
+    /* 1 W (or what radio_swrscan_power asked), held there by set_txpwr; less if PWR is set lower, or a
+     * transverter's limit */
     set_txpwr(param_f_get(cfg_pwr));
 #ifdef BOARD_X6200
     atomic_store(&swrscan_fresh, true);
@@ -950,6 +954,13 @@ bool radio_start_swrscan(int32_t from) {
     radio_unlock();
 
     return true;
+}
+
+void radio_swrscan_power(float w) {
+    radio_lock();
+    swrscan_pwr_w = LV_CLAMP(0.1f, w, SWRSCAN_PWR_MAX_W);
+    set_txpwr(txpwr_asked);
+    radio_unlock();
 }
 
 void radio_stop_swrscan() {
@@ -2981,7 +2992,7 @@ static bool radio_tick() {
             case RADIO_SWRSCAN:
 #ifdef BOARD_X6200
                 if (atomic_load(&swrscan_quick)) {      /* the base's own sweep: a reading at each packet, as v0.3.8 */
-                    dialog_swrscan_update(pack->vswr * 0.1f);
+                    dialog_swrscan_update(pack->vswr * 0.1f, pack->tx_power * 0.1f);
                     break;
                 }
                 /* The carrier. Not keyed yet, or the power still coming up: it starts from 0 at each move and comes up
@@ -3013,11 +3024,15 @@ static bool radio_tick() {
                     swrscan_peak    = 0;        /* read: dialog_swrscan_update moves to the next point */
                     swrscan_move_ms = swrscan_up_ms = now_time;
                     swrscan_n       = swrscan_sum = 0;
-                    dialog_swrscan_update(v);
+                    dialog_swrscan_update(v, pack->tx_power * 0.1f);
                 }
                 break;
 #else
-                dialog_swrscan_update(pack->vswr * 0.1f);
+                /* Not keyed yet, or keyed without power out: the base still reports an SWR there, 1.0 (2026-11-13,
+                 * an EFHW: each band's first three readings 1.0 after the settle, then a 0, then the real 3.3) */
+                if (!pack->tx || !pack->tx_power)
+                    break;
+                dialog_swrscan_update(pack->vswr * 0.1f, pack->tx_power * 0.1f);
                 break;
 #endif
 

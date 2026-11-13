@@ -127,6 +127,8 @@ int  radio_tx_mode(void);
 /* From RX only, where the radio may transmit and with data from the base (else false, "No TX on ..." or "No TX: no
  * data from the base" said): the VFO that transmits to `from`, then AM at 1 W at most */
 bool radio_start_swrscan(int32_t from);
+/* The SWR scan's power cap, 1 W unless a band's closer look asks more (at most 5 W); PWR lower still wins */
+void radio_swrscan_power(float w);
 void radio_stop_swrscan();
 
 void radio_poweroff();
