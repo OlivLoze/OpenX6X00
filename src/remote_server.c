@@ -58,7 +58,8 @@
  *  server uses them) and tells the panel clients what changed every 50 ms. The apps: the FT8
  *  list's rows go out as they come ("ft8r {...}", the last 48 to a page that opens later), the
  *  app's state when it changes ("ft8 {...}"), the CW decoder's text ("cw \"...\""); "ft8
- *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "wefax
+ *  open|close|cq|stop|auto|hold|mode", "ft8 txfreq HZ", "ft8 reply ID" work the app, "ft8 wf 1" sends
+ *  its waterfall rows (binary 0xFFFD, remote_server_ft8_wf), "wefax
  *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), each SWR scan
  *  sweep goes out as "swr {name, lo, hi, w, v: [...]}" (remote_server_swr), "pos LAT
  *  LON [ACC]" gives the radio the phone's position (degrees, the accuracy in metres; Field Ops uses
@@ -207,6 +208,7 @@ typedef struct {
     bool            panel;          /* wants the state, the spectrum and the spots (the Panel page) */
     bool            panel_fresh;    /* just subscribed: the whole state goes out next */
     bool            fax;            /* wants the WeFax rows (the WeFax page: "wefax rows 1") */
+    bool            ftwf;           /* wants the FT8 app's waterfall rows (the FT8 page: "ft8 wf 1") */
     atomic_bool     state_due;      /* a "set" refused: the state goes out to it next, changed or not */
     int             sess;           /* the session it authenticated as, -1 none (a viewer) */
     uint8_t         role;           /* ROLE_VIEW, ROLE_OPERATE, ROLE_ADMIN */
@@ -955,6 +957,7 @@ static void client_close(client_t *c) {
     c->funnel  = false;
     c->panel   = false;
     c->fax     = false;
+    c->ftwf    = false;
     c->out_len = c->in_len = c->text_len = 0;
     pthread_mutex_unlock(&c->lock);
 }
@@ -1362,6 +1365,30 @@ void remote_server_wefax_row(const uint8_t *row, unsigned width, uint32_t number
         pthread_mutex_unlock(&c->lock);
         if (room)
             client_frame(c, WS_OP_BINARY, &hdr, sizeof(hdr), row, width);
+    }
+}
+
+/* LVGL thread (ft8_window.c): a row of the FT8 app's waterfall, to the pages that asked for them ("ft8 wf 1"),
+ * binary: {u16 0xFFFD, u16 bins, u16 low Hz, u16 high Hz}, then one int8 a bin, dB over the noise floor: the audio
+ * the app decodes, from its filter's low edge to its high one. A client with no room loses the row */
+void remote_server_ft8_wf(const float *db, unsigned n, int lo_hz, int hi_hz) {
+    struct {
+        uint16_t mark, n, lo, hi;
+    } hdr = {0xFFFD, (uint16_t)n, (uint16_t)lo_hz, (uint16_t)hi_hz};
+    int8_t row[2048];
+
+    if (!atomic_load(&npanel) || n > sizeof(row))
+        return;
+    for (unsigned i = 0; i < n; i++) row[i] = (int8_t)(db[i] < -128 ? -128 : db[i] > 127 ? 127 : lroundf(db[i]));
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        client_t *c = &clients[i];
+        if (c->fd < 0 || !c->up || !c->panel || !c->ftwf)
+            continue;
+        pthread_mutex_lock(&c->lock);
+        bool room = c->out_len < PANEL_ROOM;
+        pthread_mutex_unlock(&c->lock);
+        if (room)
+            client_frame(c, WS_OP_BINARY, &hdr, sizeof(hdr), row, n);
     }
 }
 
@@ -2260,6 +2287,8 @@ static void handle_text(client_t *c, char *text) {
             return;
         }
         gps_phone_set(lat, lon, acc > 100000 ? 100000 : (int)lround(acc));
+    } else if (!strcmp(a[0], "ft8") && n >= 3 && !strcmp(a[1], "wf")) {
+        c->ftwf = atoi(a[2]) != 0;      /* only watching: no role needed */
     } else if (!strcmp(a[0], "wefax") && n >= 3 && !strcmp(a[1], "rows")) {
         c->fax = atoi(a[2]) != 0;       /* only watching: no role needed */
     } else if (!strcmp(a[0], "wefax") && n >= 2) {
@@ -2529,7 +2558,7 @@ static void accept_client(int listen_fd) {
         c->pic     = PIC_SHARP;
         c->screen_stale = true;
         c->screen_ms    = 0;
-        c->panel   = c->panel_fresh = c->fax = false;
+        c->panel   = c->panel_fresh = c->fax = c->ftwf = false;
         atomic_store(&c->state_due, false);
         c->sess    = -1;
         c->role    = ROLE_VIEW;

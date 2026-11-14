@@ -53,6 +53,7 @@ void remote_server_cw_text(const char *text);
 
 /* For the WeFax page: a row of the picture coming in (LVGL thread), to the pages that asked ("wefax rows 1") */
 void remote_server_wefax_row(const uint8_t *row, unsigned width, uint32_t number);
+void remote_server_ft8_wf(const float *db, unsigned n, int lo_hz, int hi_hz);
 
 /* For the Panel page: a sweep of the SWR scan as JSON ("swr {...}"), LVGL thread */
 void remote_server_swr(const char *json);
