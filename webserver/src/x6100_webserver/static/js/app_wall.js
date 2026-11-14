@@ -23,6 +23,60 @@ const AppWall = (function() {
     return b ? b[2] : "";
   }
 
+  /* ---- Countries and flags: cty.dat as the radio reads it (/api/dxcc, looked up as src/dxcc.c does), the radio's
+   * flags (src/flags.h, drawn larger in flags.png by tools/flags_web). Loaded once; ready(fn) runs fn when they are */
+  const cty = {t: null, f: null, fns: [], cache: {}};
+  Promise.all([fetch("/api/dxcc").then(function(r) { return r.json(); }),
+               fetch("/static/img/flags.json?v=1").then(function(r) { return r.json(); })]).then(function(v) {
+    cty.t = v[0]; cty.f = v[1];
+    cty.fns.forEach(function(fn) { fn(); });
+  }).catch(function() {});
+  function ready(fn) { if (cty.t) fn(); else cty.fns.push(fn); }
+  const MODS = {P: 1, M: 1, A: 1, B: 1, R: 1, T: 1, J: 1, QRP: 1, QRPP: 1, LH: 1, LGT: 1, AE: 1, AG: 1, KT: 1};
+  function longest(s) { for (let n = s.length; n > 0; n--) { const e = cty.t.p[s.slice(0, n)]; if (e !== undefined) return e; } return -1; }
+  function byCall(s) { const e = cty.t.x[s]; return e !== undefined ? e : longest(s); }
+  /* {k: "Italy", pfx: "I", ll: [lat, lon] of the country's centre, cell: its flag in flags.png or -1}, null unknown */
+  function country(call) {
+    if (!cty.t || !call) return null;
+    const s = String(call).toUpperCase().replace(/[<>\s]/g, "");
+    if (s in cty.cache) return cty.cache[s];
+    let e = s.length < 2 || s.indexOf("...") >= 0 ? -1 : cty.t.x[s] !== undefined ? cty.t.x[s] : -1;
+    if (e < 0 && s.length >= 2) {
+      const parts = s.split("/").filter(function(p, i) { return p && !(i > 0 && (MODS[p] || /^\d$/.test(p))); });
+      if (parts.indexOf("MM") >= 0 || parts.indexOf("AM") >= 0) e = -1;
+      else if (parts.length === 1) e = byCall(parts[0]);
+      else if (parts.length >= 2) {
+        const sh = parts[1].length < parts[0].length ? 1 : 0;   /* "DL/SP2KMO" or "SP2KMO/DL": the shorter says where */
+        e = longest(parts[sh]); if (e < 0) e = byCall(parts[1 - sh]);
+      }
+    }
+    const en = e >= 0 ? cty.t.e[e] : null;
+    const c = en ? {k: en[0], pfx: en[1], ll: [en[2], en[3]], cell: cty.f.of[en[1]] !== undefined ? cty.f.of[en[1]] : -1} : null;
+    return cty.cache[s] = c;
+  }
+  /* The flag of a call's country, as an element (null when unknown) */
+  function flag(call) {
+    const c = country(call);
+    if (!c || c.cell < 0) return null;
+    const n = cty.f.n, el = document.createElement("span");
+    el.className = "flag"; el.title = c.k;
+    el.style.backgroundPosition = (-(c.cell % n) * 20) + "px " + (-Math.floor(c.cell / n) * 15) + "px";
+    return el;
+  }
+  /* Kilometres between two [lat, lon] */
+  function km(a, b) {
+    if (!a || !b) return 0;
+    const r = Math.PI / 180, d = Math.pow(Math.sin((b[0] - a[0]) * r / 2), 2) + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.pow(Math.sin((b[1] - a[1]) * r / 2), 2);
+    return Math.round(12742 * Math.asin(Math.sqrt(d)));
+  }
+  /* How far a station is from me: from its locator, else from its country's centre ("≈") */
+  function distance(me, call, grid) {
+    const g = loc2ll(grid);
+    if (g) { const d = km(me, g); return d ? d.toLocaleString("en").replace(/,/g, " ") + " km" : ""; }
+    const c = country(call), d = c ? km(me, c.ll) : 0;
+    return d ? "≈ " + d.toLocaleString("en").replace(/,/g, " ") + " km" : "";
+  }
+
   /* ---- The app's waterfall: binary rows {u16 0xFFFD, u16 bins, u16 low Hz, u16 high Hz} then int8 dB over the
    * noise floor, the newest on top. o.now(): the radio's clock (ms) a row is stamped with; o.draw(ctx, W, H, wf):
    * the page's marks over it; o.click(hz) */
@@ -281,5 +335,5 @@ const AppWall = (function() {
     return {send: send, act: act, status: status};
   }
 
-  return {pad: pad, hms: hms, loc2ll: loc2ll, band: band, waterfall: waterfall, map: map, tabs: tabs, fit: fit, connect: connect};
+  return {pad: pad, hms: hms, loc2ll: loc2ll, band: band, ready: ready, country: country, flag: flag, km: km, distance: distance, waterfall: waterfall, map: map, tabs: tabs, fit: fit, connect: connect};
 })();

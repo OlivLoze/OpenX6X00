@@ -7,6 +7,7 @@ import base64
 import binascii
 import csv
 import fcntl
+import gzip
 import hashlib
 import io
 import ipaddress
@@ -466,6 +467,66 @@ def ft8_page():
 @app.route('/js8')
 def js8_page():
     return bottle.template('js8', grid=read_param("qth"))
+
+
+# The country of a call for the apps' pages (flags, distances): AD1C's cty.dat as the radio reads it (src/dxcc.c),
+# /mnt/cty.dat first, so a newer one put on the card counts here too; the last one is the source tree's (a test
+# server). Sent whole, compact, and looked up in the page: {"e": [[name, primary prefix, lat, lon]], "p": {prefix: e},
+# "x": {whole call: e}}; lon east positive (cty.dat's is west)
+CTY_PATHS = ("/mnt/cty.dat", "/usr/share/x6100/cty.dat",
+             os.path.join(PACKAGE_DIR, "..", "..", "..", "third-party", "cty", "cty.dat"))
+CTY_SHORT = {"Fed. Rep. of Germany": "Germany", "United States": "USA", "European Russia": "Russia",
+             "Republic of Korea": "South Korea", "DPR of Korea": "North Korea", "United Arab Emirates": "UAE",
+             "Slovak Republic": "Slovakia", "Czech Republic": "Czechia", "Bosnia-Herzegovina": "Bosnia",
+             "Dem. Rep. of the Congo": "DR Congo", "Republic of the Congo": "Congo",
+             "Republic of South Sudan": "South Sudan", "Antigua & Barbuda": "Antigua", "Trinidad & Tobago": "Trinidad",
+             "Turks & Caicos Islands": "Turks & Caicos", "St. Kitts & Nevis": "St. Kitts",
+             "Sov Mil Order of Malta": "SMOM", "UK Base Areas on Cyprus": "UK Cyprus"}   # as src/dxcc.c shows them
+_cty = {"key": None, "gz": None}
+
+
+def cty_table(text):
+    ents, pfx, exact = [], {}, {}
+    for block in text.split(";"):
+        if ":" not in block:
+            continue
+        head, _, aliases = block.rpartition(":")
+        f = [x.strip() for x in head.split(":")]
+        if len(f) < 8:
+            continue
+        name, prim = f[0], f[7].lstrip("*")
+        try:
+            lat, lon = float(f[4]), -float(f[5])
+        except ValueError:
+            continue
+        e = len(ents)
+        ents.append([CTY_SHORT.get(name, name), prim, lat, lon])
+        for a in aliases.replace("\n", " ").split(","):
+            a = re.sub(r"[\(\[<{~].*", "", a.strip())   # its own zones, position, continent or time: not needed here
+            if a.startswith("="):
+                exact[a[1:]] = e
+            elif a:
+                pfx[a] = e
+        pfx.setdefault(prim, e)
+    return {"e": ents, "p": pfx, "x": exact}
+
+
+@app.get('/api/dxcc')
+def dxcc_table():
+    path = next((p for p in CTY_PATHS if os.path.exists(p)), None)
+    if not path:
+        raise bottle.HTTPError(404, "No cty.dat on the radio")
+    key = (path, os.path.getmtime(path))
+    if _cty["key"] != key:
+        with open(path, encoding="latin-1") as f:
+            _cty["gz"] = gzip.compress(json.dumps(cty_table(f.read()), separators=(",", ":")).encode())
+        _cty["key"] = key
+    bottle.response.content_type = "application/json"
+    bottle.response.set_header("Cache-Control", "max-age=3600")
+    if "gzip" in bottle.request.headers.get("Accept-Encoding", ""):
+        bottle.response.set_header("Content-Encoding", "gzip")
+        return _cty["gz"]
+    return gzip.decompress(_cty["gz"])
 
 
 # The Panel page (views/panel.html): the radio worked natively over the same WebSocket

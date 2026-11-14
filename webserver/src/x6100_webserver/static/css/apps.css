@@ -120,3 +120,5 @@ main h2{margin-bottom:6px}
   .mbar .btn{height:42px;padding:0 4px}
 }
 .app-help{margin:10px 0 0;font-size:12px}
+.flag{display:inline-block;width:20px;height:15px;border-radius:2px;background:url(/static/img/flags.png?v=1) no-repeat;background-size:320px auto;
+  box-shadow:0 0 0 1px rgba(255,255,255,.14);vertical-align:-2px;flex:none;margin-right:6px}

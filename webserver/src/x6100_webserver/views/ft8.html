@@ -1,5 +1,5 @@
 % rebase('base.html', title='FT8')
-<link href="/static/css/apps.css?v=1" rel="stylesheet">
+<link href="/static/css/apps.css?v=2" rel="stylesheet">
 <style>
 /* The FT8 page (F4OLI): the radio's FT8 app from the browser, as a wall of four screens and a desk: the app's
  * waterfall, the stations on a map, the band's decodes, what concerns our QSO, and the app's buttons. The radio
@@ -155,7 +155,7 @@ and nothing keys the transmitter.</p>
 
 <script src="/static/js/radio_link.js?v=2"></script>
 <script src="/static/js/radio_session.js?v=8"></script>
-<script src="/static/js/app_wall.js?v=1"></script>
+<script src="/static/js/app_wall.js?v=2"></script>
 <script>
 (function() {
   "use strict";
@@ -239,7 +239,7 @@ and nothing keys the transmitter.</p>
     const $r = $("<div class='row'>").addClass("t-" + cls).toggleClass("go", go).attr("data-c", r.c || "");
     const $m = $("<span class='m'>").text(msg);
     if (cls === "wk") $m.prepend(CHECK);
-    $r.append($("<span class='u'>").text(t), $("<span class='r'>").text(go ? snr(r.snr) : ""), $("<span class='r'>").text(go ? r.f : ""), $m, $("<span class='k'>").text(go ? where(r) : ""));
+    $r.append($("<span class='u'>").text(t), $("<span class='r'>").text(go ? snr(r.snr) : ""), $("<span class='r'>").text(go ? r.f : ""), $m, kCell(go ? r.c : "", go ? where(r) : ""));
     if (go) {
       $r.attr("title", "Answer " + (r.c || "") + " in our next slot");
       $r.on("click", function() { if (act("ft8 reply " + r.id)) status("Answering " + (r.c || msg)); });
@@ -247,6 +247,18 @@ and nothing keys the transmitter.</p>
     }
     return $r;
   }
+  /* Country and distance, the sender's flag first (once the countries are loaded: then the rows already shown get it) */
+  function kCell(call, text) {
+    const $k = $("<span class='k'>"), f = AppWall.flag(call);
+    if (f) $k.append(f);
+    return $k.append(document.createTextNode(text));
+  }
+  AppWall.ready(function() {
+    $(".row[data-c]").each(function() {
+      const k = this.querySelector(".k"), f = this.dataset.c && AppWall.flag(this.dataset.c);
+      if (k && f && !k.querySelector(".flag")) k.prepend(f);
+    });
+  });
   function addTo(which, $l, el, $row, t) {
     follow(el, function() {
       if (t && lastSlot[which] !== t) { lastSlot[which] = t; $l.append($("<div class='sep'>").text(t + (which === "dec" && pendingSep ? " · " + pendingSep : ""))); }
