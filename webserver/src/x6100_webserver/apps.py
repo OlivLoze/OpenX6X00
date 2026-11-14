@@ -463,6 +463,11 @@ def ft8_page():
     return bottle.template('ft8', grid=read_param("qth"))
 
 
+@app.route('/js8')
+def js8_page():
+    return bottle.template('js8', grid=read_param("qth"))
+
+
 # The Panel page (views/panel.html): the radio worked natively over the same WebSocket
 @app.route('/panel')
 def panel():
