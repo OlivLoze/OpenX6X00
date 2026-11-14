@@ -1498,7 +1498,7 @@ static void wf_row_add(void *data) {
 
     if (row->win_gen == win_gen) {
         lv_waterfall_add_data(waterfall, row->db, row->n);
-        remote_server_ft8_wf(row->db, row->n, filter_low, filter_high);
+        remote_server_app_wf(row->db, row->n, filter_low, filter_high);
     }
     free(row->db);
 }

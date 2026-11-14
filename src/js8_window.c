@@ -20,6 +20,7 @@
 #include "js8/js8_transmit.h"
 #include "js8/js8_logic.h"
 #include "js8/js8_submode.h"
+#include "remote_server.h"
 #include "qth/qth.h"
 #include "station.h"
 #include "qso_log.h"
@@ -297,6 +298,7 @@ static void speed_warn(void);
 
 /* The list */
 static void handle_incoming(const js8_rx_msg_t *msg);
+static void remote_msg(const js8_rx_msg_t *msg), rstat_update(void);
 static bool find_station(const char *call, js8_station_t *found);
 static void rebuild_station_rows(void), show_selection(void);
 static int64_t now_wall_ms(void), now_mono_ms(void);
@@ -1159,6 +1161,7 @@ static void ui_add_message(void *arg)
     if (!table || !dialog.run) return;
     const js8_rx_msg_t *m = arg;
     add_message(m);
+    remote_msg(m);
 }
 
 static void on_message(const js8_rx_msg_t *msg, void *unused)
@@ -1288,8 +1291,10 @@ static void wf_timer_cb(lv_timer_t *timer)
     if (t_us < wf_due_us) return;
     wf_due_us += step;
 
-    unsigned h = wf_q_head;
+    unsigned        h = wf_q_head;
+    static unsigned remote_n;
     lv_waterfall_add_data(waterfall, wf_queue[h], wf_queue_size[h]);
+    if (remote_n++ % 3 == 0) remote_server_app_wf(wf_queue[h], wf_queue_size[h], filter_low, filter_high);
     wf_queue_pop();
     /* Paint it now. Waiting for LVGL's own refresh (every 33 ms of a slow
      * tick) put rows 66 to 134 ms apart instead of evenly. */
@@ -1518,6 +1523,7 @@ static void ui_tx_status(void *arg)
         ours.submode      = (uint8_t)js8_speed_submode(st->speed);
         snprintf(ours.text, sizeof(ours.text), "%s", tx_preview[0] ? tx_preview : st->text);
         add_message(&ours);
+        remote_msg(&ours);
         char done_call[JS8_RX_CALL_LEN];
         if (js8_qsos_sent(qsos, ours.text, params.callsign.x, now_wall_ms(), done_call, sizeof(done_call)))
             log_offer(done_call);
@@ -1600,6 +1606,7 @@ static void tx_timer_cb(lv_timer_t *timer)
     LV_UNUSED(timer);
     swr_guard_tick();
     update_tx_bar(); /* the countdown */
+    rstat_update(); /* for the browser */
     n++;
     if (n % 4 == 0) every_second();
     if (n % 20 == 0 && view_stations) rebuild_station_rows(); /* the ages move on */
@@ -2477,6 +2484,7 @@ static void construct_cb(lv_obj_t *screen) {
 }
 
 static void destruct_cb(void) { /* the app closes: the radio goes back to how it was */
+    rstat_update(); /* the browser sees it closed */
     /* The transmitter first: its thread gives the VFO back and drops PTT, and has to be gone before
      * the memory slot is restored. */
     tx_stop_all(); /* waits for the TX thread */
@@ -5644,4 +5652,107 @@ static void map_cb(button_data_t *btn) {
     lv_group_add_obj(keyboard_group, map_obj);
     lv_group_focus_obj(map_obj);
     lv_group_set_editing(keyboard_group, true); /* the MFK steps through the stations */
+}
+
+
+/* ---- The browser's JS8 page (remote_server.c) ---------------------------- */
+
+static pthread_mutex_t rstat_lock = PTHREAD_MUTEX_INITIALIZER;
+static js8_status_t    rstat;       /* what js8_window_status() hands out, under rstat_lock */
+
+/* A message as it comes, ours too, with the sender's grid when known */
+static void remote_msg(const js8_rx_msg_t *msg) {
+    js8_station_t st;
+    const char   *grid = !msg->tx && msg->from[0] && find_station(msg->from, &st) ? st.grid : "";
+    remote_server_js8_msg(msg, grid);
+}
+
+/* UI thread: the state as it is now, for any thread to read */
+static void rstat_update(void) {
+    js8_status_t s = {0};
+    int64_t      now = now_wall_ms(), next = 0;
+
+    s.open = dialog.run && tx_bar != NULL;
+    if (s.open) {
+        s.busy    = tx != NULL && js8_tx_busy(tx);
+        s.sending = tx_status.state == JS8_TX_KEYING;
+        s.auto_cq = auto_cq;
+        s.hb      = params.js8_hb.x;
+        s.auto_on = params.js8_auto.x;
+        s.hold    = params.js8_hold_offset.x;
+        s.speed   = cur_speed();
+        s.frame   = tx_status.frame;
+        s.frames  = tx_status.frames;
+        s.txf     = params.js8_tx_freq.x;
+        s.sel_hz  = sel_call[0] && qso_freq >= 0 ? (int32_t)(qso_freq + 0.5f) : -1;
+        s.hb_min  = params.js8_hb_interval.x;
+        snprintf(s.sel, sizeof(s.sel), "%s", sel_call);
+        snprintf(s.where, sizeof(s.where), "%s", where_label());
+        if (s.busy) snprintf(s.text, sizeof(s.text), "%s", tx_preview[0] ? tx_preview : tx_status.text);
+        if (tx_status.state != JS8_TX_IDLE) next = tx_status.next_ms;
+        else if (auto_cq) next = auto_cq_next_ms;
+        else if (params.js8_hb.x) next = hb_next_ms;
+    }
+    s.next_s = next > now ? (int32_t)((next - now + 999) / 1000) : -1;
+    pthread_mutex_lock(&rstat_lock);
+    rstat = s;
+    pthread_mutex_unlock(&rstat_lock);
+}
+
+void js8_window_status(js8_status_t *s) {
+    pthread_mutex_lock(&rstat_lock);
+    *s = rstat;
+    pthread_mutex_unlock(&rstat_lock);
+}
+
+bool js8_window_remote(js8_rc_t what, int32_t arg, const char *text) {
+    if (!dialog.run || !tx_bar) return false;
+    user_touch(); /* someone is working the app */
+    switch (what) {
+    case JS8_RC_CQ: cq_cb(&btn_cq); break;
+    case JS8_RC_AUTOCQ:
+        if (!auto_cq) cq_hold_cb(&btn_cq);
+        break;
+    case JS8_RC_HBNOW: heartbeat_cb(NULL); break;
+    case JS8_RC_HB: { /* as the HB button, without handing the knob the interval */
+        if (hb_adjusting) hb_adjust_end();
+        bool on    = param_flip(&params.js8_hb);
+        hb_next_ms = 0;
+        if (btn_hbauto.disp_btn) buttons_refresh(&btn_hbauto);
+        redraw(&btn_hbackk);
+        msg_update_text_fmt(on ? "HB on: every %u min" : "HB off", params.js8_hb_interval.x);
+        update_status();
+        break;
+    }
+    case JS8_RC_AUTO: auto_cb(&btn_auto); break;
+    case JS8_RC_HOLD: hold_cb(&btn_hold); break;
+    case JS8_RC_SPEED: speed_cb(NULL); break;
+    case JS8_RC_STOP: stop_tx_cb(NULL); break;
+    case JS8_RC_TXFREQ: set_tx_offset(arg); break;
+    case JS8_RC_SELECT: {
+        js8_station_t st;
+        if (!text || !find_station(text, &st)) {
+            msg_update_text_fmt("%s: not heard on this band", text ? text : "");
+            return false;
+        }
+        snprintf(sel_call, sizeof(sel_call), "%s", st.call);
+        qso_freq = st.freq_hz;
+        sel_snr  = st.snr;
+        show_selection();
+        break;
+    }
+    case JS8_RC_SEND: { /* as OK in the compose window: macros filled, a directed message to the selected station
+                         * goes on its offset unless Hold */
+        char filled[TX_TEXT_MAX * 2], out[TX_TEXT_MAX + 8], them[JS8_RX_CALL_LEN];
+        if (!text || !*text) return false;
+        macros_fill(text, false, filled, sizeof(filled));
+        if (!aprs_prepare(filled, out, sizeof(out))) return false;
+        if (sel_call[0] && qso_freq >= 0 && starts_with_call(out, them, sizeof(them)) && !strcasecmp(them, sel_call))
+            apply_hold(qso_freq);
+        if (!tx_queue(out)) return false;
+        break;
+    }
+    }
+    rstat_update();
+    return true;
 }
