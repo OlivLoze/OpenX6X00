@@ -60,6 +60,9 @@ main h2{margin-bottom:6px}
 /* the map */
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;background:#080b11}
 #land{fill:#1a2030;stroke:#3a4560;stroke-width:.7}
+#sat{filter:brightness(.82) saturate(.9)}
+#map.sat #land{fill:none;stroke:rgba(232,227,212,.22);stroke-width:.6}
+.chip.sep{margin-left:6px}
 .mapkey{position:absolute;left:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;background:rgba(6,7,10,.84);padding:4px 8px;border-radius:4px;border:1px solid var(--bord);max-width:calc(100% - 16px)}
 .mapkey span{display:flex;align-items:center;gap:4px;font:500 11px var(--f-lbl);letter-spacing:.06em;color:var(--mut)}
 .mapkey i{width:8px;height:8px;border-radius:50%;background:var(--c)}
@@ -121,15 +124,19 @@ main h2{margin-bottom:6px}
 @media (max-width:760px){
   .ft-wall{display:block;height:auto!important;min-height:0}
   .mon{margin-bottom:8px}
-  #m-wf .mb{height:150px;flex:none}
   .wfx{display:none}
-  .tabs{display:flex;gap:4px;margin:0 0 8px}
-  .tabs button{flex:1;height:38px;padding:0;font:500 11px var(--f-lbl);letter-spacing:.1em;border:1px solid var(--bord2);border-radius:4px;background:var(--bg2);color:var(--mut);gap:6px}
+  .tabs{display:flex;gap:4px;margin:0 0 6px}
+  .mon{margin-bottom:6px}
+  .mh{min-height:28px;padding:3px 10px 3px 12px}
+  .mh h3{font-size:15px}
+  #m-wf .mh{display:none}
+  .tabs button{flex:1;height:28px;padding:0;font:500 11px var(--f-lbl);letter-spacing:.1em;border:1px solid var(--bord2);border-radius:4px;background:var(--bg2);color:var(--mut);gap:6px}
   .tabs button[aria-selected=true]{color:var(--violet);border-color:var(--violet);background:rgba(185,155,255,.1)}
   .tabs .n{font:11px var(--f-num)}
   .pane{display:none}
   .pane.show{display:flex}
-  .pane .mb{height:58vh;min-height:300px;flex:none}
+  .pane .mb{height:52vh;min-height:300px;flex:none}
+  #m-wf .mb,#m-map .mb{height:36vh;min-height:220px}
   .row{grid-template-columns:56px 30px 40px minmax(0,1fr);padding:4px 10px 4px 12px}
   .row .k{display:none}
   .desk{display:none}
@@ -152,7 +159,12 @@ main h2{margin-bottom:6px}
 </div>
 
 <section class="ft-wall" id="wall">
-  <article class="mon" id="m-wf">
+  <div class="tabs" role="tablist" data-g="top">
+    <button type="button" role="tab" data-t="m-wf" aria-selected="true">WATERFALL</button>
+    <button type="button" role="tab" data-t="m-map" aria-selected="false">MAP <span class="n" id="n-map">0</span></button>
+  </div>
+
+  <article class="mon pane show" data-g="top" id="m-wf">
     <div class="mh"><span class="led off" id="led-wf"></span><h3>Waterfall</h3>
       <span class="lbl wfx" id="wf-sub">the app's audio</span>
       <div class="meta"><span class="lbl wfx">Click: TX here</span></div></div>
@@ -163,20 +175,16 @@ main h2{margin-bottom:6px}
     </div></div>
   </article>
 
-  <div class="tabs" role="tablist" id="tabs">
-    <button type="button" role="tab" data-t="m-dec" aria-selected="true">DECODES <span class="n" id="n-dec">0</span></button>
-    <button type="button" role="tab" data-t="m-rx" aria-selected="false">QSO <span class="n" id="n-rx">0</span></button>
-    <button type="button" role="tab" data-t="m-map" aria-selected="false">MAP <span class="n" id="n-map">0</span></button>
-  </div>
 
-  <article class="mon pane" id="m-map">
+  <article class="mon pane" data-g="top" id="m-map">
     <div class="mh"><span class="led" style="--c:var(--cobalt)"></span><h3>Map</h3>
       <span class="lbl"><span id="mygrid">-</span> · <span class="num" id="nst">0</span> stations</span>
-      <div class="meta"><button type="button" class="chip" id="z-near" aria-pressed="true">Near</button><button type="button" class="chip" id="z-world" aria-pressed="false">World</button></div></div>
+      <div class="meta"><button type="button" class="chip" id="z-near" aria-pressed="true">Near</button><button type="button" class="chip" id="z-world" aria-pressed="false">World</button><button type="button" class="chip sep" id="z-sat" aria-pressed="false" title="The NASA Blue Marble picture under the stations, or the plain map">Sat</button></div></div>
     <div class="mb">
       <svg id="map" viewBox="150 15 75 46" preserveAspectRatio="xMidYMid slice" aria-label="Stations heard, at their locator">
         <defs><pattern id="gr" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="rgba(92,184,255,.09)" stroke-width=".15"/></pattern></defs>
         <rect x="-360" y="0" width="1080" height="180" fill="url(#gr)"/>
+        <image id="sat" x="0" y="0" width="360" height="180" preserveAspectRatio="none" display="none"/>
         <path id="land" vector-effect="non-scaling-stroke" d=""/>
         <g id="gc"></g><g id="dots"></g>
       </svg>
@@ -187,7 +195,12 @@ main h2{margin-bottom:6px}
     </div>
   </article>
 
-  <article class="mon pane show" id="m-dec">
+  <div class="tabs" role="tablist" data-g="bot">
+    <button type="button" role="tab" data-t="m-dec" aria-selected="true">BAND ACTIVITY <span class="n" id="n-dec">0</span></button>
+    <button type="button" role="tab" data-t="m-rx" aria-selected="false">QSO <span class="n" id="n-rx">0</span></button>
+  </div>
+
+  <article class="mon pane show" data-g="bot" id="m-dec">
     <div class="mh"><span class="led" style="--c:var(--solar)"></span><h3>Band activity</h3>
       <span class="lbl"><span class="num" id="slotn">0</span> last slot</span>
       <div class="meta"><button type="button" class="chip" id="b-clear">Clear</button></div></div>
@@ -197,7 +210,7 @@ main h2{margin-bottom:6px}
     </div></div>
   </article>
 
-  <article class="mon pane" id="m-rx">
+  <article class="mon pane" data-g="bot" id="m-rx">
     <div class="mh"><span class="led" style="--c:var(--red)"></span><h3>QSO</h3>
       <span class="lbl">to me, from me, with <span id="rx-dx">-</span></span></div>
     <div class="mb"><div class="list" id="rx">
@@ -421,6 +434,21 @@ and nothing keys the transmitter.</p>
   }
   $("#z-near").on("click", function() { setView("near"); });
   $("#z-world").on("click", function() { setView("world"); });
+  /* Satellite: NASA's Blue Marble (public domain, 3840 x 1920, equirectangular as the map), loaded the first time
+   * it is asked for; on by default on a computer, off on a phone; this browser keeps the choice */
+  function setSat(on) {
+    const img = document.getElementById("sat");
+    if (on && !img.getAttribute("href")) img.setAttribute("href", "/static/img/world_sat.jpg?v=1");
+    img.setAttribute("display", on ? "inline" : "none");
+    document.getElementById("map").classList.toggle("sat", on);
+    $("#z-sat").attr("aria-pressed", String(on));
+    try { localStorage.setItem("ft8.sat", on ? "1" : "0"); } catch (e) {}
+  }
+  $("#z-sat").on("click", function() { setSat($(this).attr("aria-pressed") !== "true"); });
+  (function() {
+    let v = null; try { v = localStorage.getItem("ft8.sat"); } catch (e) {}
+    setSat(v === null ? window.innerWidth > 760 : v === "1");
+  })();
   /* The great circle from us to ll, as a polyline broken where it crosses the edge of the map */
   function greatCircle(a, b) {
     const r = Math.PI / 180, p1 = [a[0] * r, a[1] * r], p2 = [b[0] * r, b[1] * r];
@@ -458,6 +486,7 @@ and nothing keys the transmitter.</p>
       const c = document.createElementNS(svgNS, "circle");
       c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", (big ? 1.5 : 1) * u);
       c.setAttribute("fill", COL[s.cls]); c.setAttribute("fill-opacity", Math.max(0.25, 1 - age / 15).toFixed(2));
+      c.setAttribute("stroke", "#06070a"); c.setAttribute("stroke-width", 0.8); c.setAttribute("vector-effect", "non-scaling-stroke");
       const tt = document.createElementNS(svgNS, "title"); tt.textContent = s.c + " " + s.g + (s.k ? " · " + s.k : "") + (s.d ? " · " + s.d + " km" : "");
       c.appendChild(tt); g.appendChild(c);
       if (big) {
@@ -682,11 +711,19 @@ and nothing keys the transmitter.</p>
   both("#b-dn", function() { if (ft8) act("ft8 txfreq " + (ft8.txf - 10)); });
   both("#b-up", function() { if (ft8) act("ft8 txfreq " + (ft8.txf + 10)); });
 
-  /* the phone's tabs */
-  $("#tabs").on("click", "button", function() {
-    $("#tabs button").attr("aria-selected", "false"); $(this).attr("aria-selected", "true");
-    $(".pane").removeClass("show"); $("#" + this.dataset.t).addClass("show");
-    if (this.dataset.t === "m-map") drawMap();
+  /* the phone's tabs: waterfall or map on top, band activity or QSO under them; this browser keeps the choice */
+  function showTab(id) {
+    const g = $("#" + id).attr("data-g");
+    $('.tabs[data-g="' + g + '"] button').each(function() { this.setAttribute("aria-selected", String(this.dataset.t === id)); });
+    $('.pane[data-g="' + g + '"]').removeClass("show"); $("#" + id).addClass("show");
+    if (id === "m-map") drawMap();
+    if (id === "m-wf") overlay();
+    try { localStorage.setItem("ft8.tab." + g, id); } catch (e) {}
+  }
+  $(".tabs").on("click", "button", function() { showTab(this.dataset.t); });
+  ["top", "bot"].forEach(function(g) {
+    let id = null; try { id = localStorage.getItem("ft8.tab." + g); } catch (e) {}
+    if (id && $('.pane[data-g="' + g + '"]#' + id).length) showTab(id);
   });
 
   /* the wall fills the window under the page's top, the desk under it */
