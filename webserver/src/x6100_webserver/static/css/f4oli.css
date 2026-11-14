@@ -1,0 +1,203 @@
+/* F4OLI fork: the Pi-station look (operator console, phosphor colours), on top of base.css. base.css keeps every
+ * layout and state rule of upstream; this file only re-dresses them, so upstream changes keep merging.
+ * Fonts are served by the radio itself (no internet in the field). SPDX-License-Identifier: LGPL-2.1-or-later */
+
+@font-face{font-family:"Big Shoulders Display";src:url(../fonts/BigShouldersDisplay.woff2) format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"IBM Plex Sans";src:url(../fonts/IBMPlexSans.woff2) format("woff2");font-weight:100 700;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url(../fonts/JetBrainsMono.woff2) format("woff2");font-weight:100 800;font-display:swap}
+@font-face{font-family:"IBM Plex Mono";src:url(../fonts/IBMPlexMono-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"IBM Plex Mono";src:url(../fonts/IBMPlexMono-600.woff2) format("woff2");font-weight:600;font-display:swap}
+
+:root{
+  --bg:#06070a;--bg2:#0d0f14;--bg3:#13161d;--bg4:#1a1e27;
+  --amber:#ff9100;--solar:#ffd860;--cw:#5dffaa;--cobalt:#5cb8ff;--magenta:#ff5cb4;--red:#ff4757;
+  --txt:#e8e3d4;--mut:#a9a497;
+  --bord:rgba(255,255,255,.07);--bord2:rgba(255,255,255,.16);
+  /* upstream's names, so every page's var(--...) follows */
+  --panel:var(--bg2);--line:#262a33;--text:var(--txt);--dim:var(--mut);--accent:var(--amber);--ok:var(--cw);--err:var(--red);
+  --radius:6px;
+  --cc:var(--amber);   /* the channel colour: the area of the radio the page belongs to */
+  --f-disp:"Big Shoulders Display",Impact,sans-serif;
+  --f-lbl:"IBM Plex Mono",ui-monospace,monospace;
+  --f-num:"JetBrains Mono",ui-monospace,monospace;
+  --f-body:"IBM Plex Sans",system-ui,sans-serif;
+  color-scheme:dark;
+}
+/* One colour per area, the same in the menu, the page title and its cards */
+body[data-grp=remote],[data-g=remote]{--cc:var(--cobalt)}
+body[data-grp=frequencies],[data-g=frequencies]{--cc:var(--solar)}
+body[data-grp=operating],[data-g=operating]{--cc:var(--cw)}
+body[data-grp=files],[data-g=files]{--cc:var(--magenta)}
+body[data-grp=system],[data-g=system]{--cc:var(--amber)}
+body[data-grp=general],[data-g=general]{--cc:var(--amber)}
+
+/* Ground: near-black, an oscilloscope graticule, two phosphor glows in the corners, film grain */
+html{background:var(--bg)}
+body{background:
+    radial-gradient(900px 520px at -8% -12%,rgba(255,145,0,.10),transparent 60%),
+    radial-gradient(800px 520px at 108% 112%,rgba(93,255,170,.07),transparent 60%),
+    var(--bg);
+  background-attachment:fixed;color:var(--txt);font:15px/1.55 var(--f-body);min-height:100vh;position:relative}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:42px 42px}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;opacity:.32;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E")}
+header,main,footer{position:relative;z-index:1}
+::selection{background:rgba(255,145,0,.35);color:#fff}
+*{scrollbar-color:#2c313c transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2c313c;border-radius:5px;border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+input,textarea{caret-color:var(--amber)}
+:focus-visible{outline:2px solid var(--cc);outline-offset:2px}
+a{color:var(--cc);text-underline-offset:3px}
+
+/* Header: the brand and the menu, each menu group in its own phosphor */
+header{background:linear-gradient(180deg,rgba(13,15,20,.96),rgba(6,7,10,.92));border-bottom:1px solid var(--bord);
+  box-shadow:0 1px 0 rgba(0,0,0,.6),0 12px 30px -18px rgba(0,0,0,.9);z-index:40}
+@media (min-width:641px){header{position:sticky;top:0;backdrop-filter:blur(6px)}}
+.bar,main,footer{max-width:1100px}
+.bar{padding:10px 20px;gap:14px}
+.brand{font:800 22px/1 var(--f-disp);letter-spacing:.12em;text-transform:uppercase;color:var(--txt);gap:10px}
+.brand svg{width:26px;height:26px}
+.brand small{font:500 11px/1 var(--f-lbl);letter-spacing:.2em;color:var(--mut);margin-left:6px;text-transform:uppercase}
+nav{gap:2px}
+nav a,nav .grp>button{font:500 11.5px/1 var(--f-lbl);letter-spacing:.11em;text-transform:uppercase;color:var(--mut);padding:9px 11px;border-radius:4px;position:relative}
+nav a::before,nav .grp>button::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--cc);opacity:.55;flex:none}
+nav>a .i,nav .grp>button .i:not(.chev){display:none}
+nav a:hover,nav .grp>button:hover,nav .grp:focus-within>button{color:var(--txt);background:var(--bg3)}
+nav a[aria-current],nav .grp>button[aria-current]{color:var(--cc);background:color-mix(in srgb,var(--cc) 12%,transparent);font-weight:600}
+nav a[aria-current]::before,nav .grp>button[aria-current]::before{opacity:1;box-shadow:0 0 8px var(--cc)}
+nav .grp>button[aria-current]::after,nav>a[aria-current]::after{content:"";position:absolute;left:10px;right:10px;bottom:-11px;height:2px;background:var(--cc);box-shadow:0 0 8px var(--cc)}
+nav .sub{background:var(--bg2);border:1px solid var(--bord2);border-radius:6px;box-shadow:0 18px 40px -10px rgba(0,0,0,.85);padding:5px}
+nav .sub a{letter-spacing:.12em;padding:10px 12px}
+nav .sub a::before{display:none}
+nav .sub a .i{display:inline-block;color:var(--cc);opacity:.85}
+nav .sub a[aria-current]::after{display:none}
+
+/* Page title */
+main{padding:26px 20px 34px}
+h2{font:800 34px/1 var(--f-disp);letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;gap:12px}
+h2 .i{color:var(--cc);width:24px;height:24px;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--cc) 60%,transparent))}
+main>.sub,p.sub{color:var(--mut);max-width:72ch;font-size:14.5px;margin-bottom:24px}
+
+/* Cards: one surface, a hairline, the 2px channel rail of the area */
+.card,.dp-card,a.tile,.sbox{background:linear-gradient(180deg,var(--bg2),#0a0c10);border:1px solid var(--bord);border-radius:var(--radius);
+  box-shadow:inset 2px 0 0 var(--cc),0 10px 24px -16px rgba(0,0,0,.9)}
+.card{padding:18px 20px}
+.card h3,.dp-head h3,.sbox h3{font:700 19px/1.1 var(--f-disp);letter-spacing:.08em;text-transform:uppercase}
+.dp-head{background:linear-gradient(90deg,color-mix(in srgb,var(--cc) 7%,var(--bg3)),var(--bg2) 70%);border-bottom:1px solid var(--bord);padding:13px 18px}
+.dp-head p{color:var(--mut);font-size:13px}
+.dp-ico{background:transparent;border:1px solid color-mix(in srgb,var(--cc) 40%,transparent);color:var(--cc);border-radius:5px;width:34px;height:34px}
+.dp-body{padding:14px 18px}
+.dp-row{padding:12px 18px}
+.dp-row+.dp-row{border-top:1px solid var(--bord)}
+.dp-sep{border-top-color:var(--bord);margin:14px -18px}
+.dp-lbl b{font-weight:600;font-size:14.5px}
+.dp-lbl span{color:var(--mut)}
+
+/* Home: the tiles take the colour of the area they open */
+.tiles{gap:10px}
+a.tile{padding:14px 16px;transition:border-color .18s,transform .18s,box-shadow .18s}
+a.tile:hover{border-color:var(--bord2);background:linear-gradient(180deg,var(--bg3),var(--bg2));transform:translateY(-1px);
+  box-shadow:inset 2px 0 0 var(--cc),0 0 0 1px color-mix(in srgb,var(--cc) 25%,transparent),0 14px 28px -16px rgba(0,0,0,.9)}
+a.tile b{font:700 18px/1.1 var(--f-disp);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
+a.tile>div>span{color:var(--mut)}
+a.tile[href="/panel"],a.tile[href="/remote"],a.tile[href="/tailscale"]{--cc:var(--cobalt)}
+a.tile[href="/bands"],a.tile[href="/digital_modes"],a.tile[href="/memories"]{--cc:var(--solar)}
+a.tile[href="/cluster"],a.tile[href="/field"],a.tile[href="/wavelog"],a.tile[href="/winlink"],a.tile[href="/cw_messages"],a.tile[href="/macros"],a.tile[href="/logs"]{--cc:var(--cw)}
+a.tile[href^="/files"],a.tile[href="/gallery"],a.tile[href="/backup"]{--cc:var(--magenta)}
+
+/* Labels, table heads: small capitals in Plex Mono; numbers in JetBrains Mono */
+label,th,.meta,.eff,.rst,.hc,.ses,.tag{font-family:var(--f-lbl)}
+label{font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+label.check,.chips label,.dp-lbl label,.sbox label{letter-spacing:normal;text-transform:none;font-family:var(--f-body)}
+label.check{font-size:15px;color:var(--txt)}
+th{font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line)}
+td{border-bottom:1px solid var(--bord)}
+tr:hover td{background:rgba(255,255,255,.025)}
+td,.freq_cell,.rng output,.time-now div,.dp-ctl output{font-variant-numeric:tabular-nums}
+.freq_cell,.rng output,.time-now div,code,td input,.srow b{font-family:var(--f-num)}
+code,.tag{background:var(--bg3);color:var(--cobalt);border:1px solid var(--bord);border-radius:4px}
+.tag{font-size:11px;letter-spacing:.06em}
+.card h3 a.tag,.dp-head h3 a.tag{color:var(--cobalt)}
+.eff{border-color:var(--bord2);color:var(--solar);border-radius:3px;font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:500}
+.dp-head h3 .tag,.card h3 .tag{text-transform:none;font-family:var(--f-lbl)}
+
+/* Fields */
+input,select,textarea{background:var(--bg);color:var(--txt);border:1px solid #2a2f39;border-radius:4px;font:500 14px/1.3 var(--f-num);padding:9px 11px}
+input::placeholder,textarea::placeholder{color:#8a867c}
+input:hover,select:hover{border-color:#3a404c}
+input:focus,select:focus,textarea:focus{border-color:var(--cc);box-shadow:0 0 0 3px color-mix(in srgb,var(--cc) 22%,transparent)}
+input[type=checkbox],input[type=radio]{accent-color:var(--amber)}
+input[type=file]::file-selector-button{background:var(--bg3);border:1px solid var(--bord2);border-radius:4px;font:600 11px/1.6 var(--f-lbl);letter-spacing:.12em;text-transform:uppercase;color:var(--txt)}
+
+/* Buttons: capitals in Plex Mono, the main action in amber */
+button,a.btn{font:600 11.5px/1.2 var(--f-lbl);letter-spacing:.13em;text-transform:uppercase;border-radius:4px;border-color:#2c313b;padding:10px 15px;transition:border-color .15s,box-shadow .15s,background .15s,color .15s}
+button:hover,a.btn:hover{border-color:#4a505c;background:var(--bg3)}
+.primary,button.primary{background:var(--amber);color:#120a00;border-color:var(--amber)}
+.primary:hover,button.primary:hover{background:#ffa22e;border-color:#ffa22e;filter:none;box-shadow:0 0 18px -4px rgba(255,145,0,.7)}
+button.sm{padding:6px 10px;font-size:11px}
+button.save{color:var(--cw)}
+button.remove:hover{color:var(--red);border-color:var(--red);background:rgba(255,71,87,.08)}
+button.pill{background:var(--bg3);border-color:#2c313b;border-radius:4px}
+button.pill.on,.seg button[aria-pressed=true],.chips label:has(input:checked){background:var(--amber);border-color:var(--amber);color:#120a00}
+.seg{background:var(--bg);border-color:#2c313b;border-radius:4px}
+.seg button{font-size:11px}
+.seg button+button{border-left-color:#2c313b}
+.chips label{background:var(--bg);border-color:#2c313b;border-radius:4px;font:600 12.5px/1.2 var(--f-lbl);letter-spacing:.06em}
+
+/* Switch, range */
+.sw i{background:#1c2029;border-color:#2c313b;border-radius:4px}
+.sw i::after{background:#8b877d;border-radius:3px}
+.sw input:checked+i{background:color-mix(in srgb,var(--amber) 22%,var(--bg));border-color:var(--amber);box-shadow:0 0 12px -3px rgba(255,145,0,.6)}
+.sw input:checked+i::after{background:var(--amber)}
+.rng input{accent-color:var(--cc)}
+.rng output{background:var(--bg);border-color:#2c313b;border-radius:4px;color:var(--solar)}
+
+/* States: LED pips with their glow */
+.dot{width:7px;height:7px;box-shadow:0 0 8px currentColor;color:var(--cw);animation:led 2.4s ease-in-out infinite}
+.status{font:500 12px/1.3 var(--f-lbl);letter-spacing:.06em;color:var(--cw)}
+.status.error,.status.error .dot{color:var(--red)}
+.form-unsaved,.form-unsaved .dot{color:var(--amber)}
+@keyframes led{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}a.tile:hover{transform:none}}
+.hc,.ses{border-radius:3px;font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.hc.ok,.ses.ok{border-color:color-mix(in srgb,var(--cw) 45%,transparent)}
+.hc.stale,.ses.warn{border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
+.hc.off{border-color:color-mix(in srgb,var(--red) 45%,transparent)}
+tr.unsaved td{background:rgba(255,145,0,.06)}
+.dp-tools{background:rgba(255,145,0,.07);border-bottom-color:var(--bord);font-family:var(--f-lbl);font-size:12px}
+
+/* Lists, files, gallery, time */
+.files a,.files .locked{border-bottom-color:var(--bord)}
+.files a:hover{background:var(--bg3)}
+.files .i{color:var(--cc)}
+.thumb,.time-now section,.drop{background:var(--bg);border-color:var(--bord);border-radius:4px}
+.item.sel,a.folder:hover{border-color:var(--cc);box-shadow:inset 2px 0 0 var(--cc),0 0 0 1px var(--cc)}
+.drop.over{border-color:var(--cc)}
+.crumb{font:700 20px/1.2 var(--f-disp);letter-spacing:.08em;text-transform:uppercase}
+
+/* Popups */
+.spop{background:rgba(3,4,6,.78);backdrop-filter:blur(3px)}
+.sbox{box-shadow:inset 2px 0 0 var(--cc),0 30px 60px -20px #000}
+.sbox label input{font-family:var(--f-num)}
+
+/* Footer */
+footer{font:500 11px/1.6 var(--f-lbl);letter-spacing:.16em;text-transform:uppercase;color:#7c786e;padding-bottom:34px}
+footer a{color:#a09b8f}
+
+/* The Panel's own colours (panel.html), dark theme: the same phosphors */
+.pn:not([data-theme=light]){--pb:var(--bg);--pc:var(--bg2);--pl:#262a33;--pt:var(--txt);--pd:var(--mut);--pa:var(--amber);--pok:var(--cw);--perr:var(--red);--pon:var(--cobalt)}
+
+@media (max-width:640px){
+  .bar{padding:8px 12px;gap:8px}
+  .brand{font-size:20px}
+  nav{margin:0 -4px;width:calc(100% + 8px)}
+  nav a,nav .grp>button{padding:9px 8px;font-size:11px;letter-spacing:.12em}
+  nav .grp>button[aria-current]::after,nav>a[aria-current]::after{bottom:-1px}
+  main{padding:20px 14px 28px}
+  h2{font-size:30px}
+  .card{padding:16px}
+}

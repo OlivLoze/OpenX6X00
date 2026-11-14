@@ -4,6 +4,7 @@
     <title>{{title}} - X6100 WebServer</title><link rel="icon" href="/static/favicon.ico" type="image/vnd.microsoft.icon">
     <link href="/static/css/base.css?v=10" rel="stylesheet">  <!-- v: new after a style change, browsers keep the old one -->
     <link rel="stylesheet" href="/static/css/siimple-icons.css">
+    <link href="/static/css/f4oli.css?v=1" rel="stylesheet">  <!-- F4OLI fork: the Pi-station look, on top of base.css -->
     <script src="/static/js/jquery-3.7.1.min.js"></script>
     <script>
       const mode_map = ["LSB", "LSB-D", "USB", "USB-D", "CW", "CW-R", "AM", "NFM", "SAM", "WFM"];   // x6100_mode_t, index = value in params.db
@@ -63,7 +64,15 @@
         x6100Get(a.href);
       });
     </script>
-  </head><body>
+  </head>
+    % menu = [('General', 'home', [('/', 'General', 'home')]),
+    %         ('Remote', 'sliders', [('/panel', 'Panel', 'sliders'), ('/remote', 'Screen', 'monitor'), ('/tailscale', 'Tailscale', 'lock')]),
+    %         ('Frequencies', 'wave', [('/bands', 'Bands', 'bands'), ('/digital_modes', 'Digital modes', 'pulse'), ('/memories', 'Memories', 'bookmark')]),
+    %         ('Operating', 'antenna', [('/cluster', 'Cluster', 'globe'), ('/field', 'Field Ops', 'mountain'), ('/wavelog', 'Wavelog', 'upload'), ('/winlink', 'Winlink', 'file'), ('/cw_messages', 'CW messages', 'cw'), ('/macros', 'Macros', 'list'), ('/logs', 'Logs', 'book')]),
+    %         ('Files', 'folder', [('/files/', 'Files', 'sd'), ('/gallery', 'Gallery', 'image'), ('/backup', 'Backup', 'archive')]),
+    %         ('System', 'cpu', [('/display', 'Display', 'monitor'), ('/time', 'Time', 'clock'), ('/network', 'Network', 'ethernet'), ('/tci', 'TCI', 'network'), ('/ssh', 'SSH', 'key'), ('/update', 'Update', 'download')])]
+    % here_grp = next((g for g, _, items in menu if any(request.path == h or (h != '/' and request.path.startswith(h)) for h, _, _ in items)), 'General')
+    <body data-grp="{{here_grp.lower()}}">
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
       <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12c1.7-5 3.3-5 5 0s3.3 5 5 0 3.3-5 5 0 3.3 5 5 0"/></symbol>
@@ -111,18 +120,12 @@
           <div>OpenX6X00 <small>{{call + ' · ' if call else ''}}configurator</small></div>
         </a>
         <nav>
-          % menu = [('General', 'home', [('/', 'General', 'home')]),
-          %         ('Remote', 'sliders', [('/panel', 'Panel', 'sliders'), ('/remote', 'Screen', 'monitor'), ('/tailscale', 'Tailscale', 'lock')]),
-          %         ('Frequencies', 'wave', [('/bands', 'Bands', 'bands'), ('/digital_modes', 'Digital modes', 'pulse'), ('/memories', 'Memories', 'bookmark')]),
-          %         ('Operating', 'antenna', [('/cluster', 'Cluster', 'globe'), ('/field', 'Field Ops', 'mountain'), ('/wavelog', 'Wavelog', 'upload'), ('/winlink', 'Winlink', 'file'), ('/cw_messages', 'CW messages', 'cw'), ('/macros', 'Macros', 'list'), ('/logs', 'Logs', 'book')]),
-          %         ('Files', 'folder', [('/files/', 'Files', 'sd'), ('/gallery', 'Gallery', 'image'), ('/backup', 'Backup', 'archive')]),
-          %         ('System', 'cpu', [('/display', 'Display', 'monitor'), ('/time', 'Time', 'clock'), ('/network', 'Network', 'ethernet'), ('/tci', 'TCI', 'network'), ('/ssh', 'SSH', 'key'), ('/update', 'Update', 'download')])]
           % for group, gicon, items in menu:
           % here = [request.path == h or (h != '/' and request.path.startswith(h)) for h, _, _ in items]
           % if len(items) == 1:
-          <a href="{{items[0][0]}}"{{!' aria-current="page"' if here[0] else ''}}><svg class="i"><use href="#i-{{gicon}}"/></svg>{{group}}</a>
+          <a data-g="{{group.lower()}}" href="{{items[0][0]}}"{{!' aria-current="page"' if here[0] else ''}}><svg class="i"><use href="#i-{{gicon}}"/></svg>{{group}}</a>
           % else:
-          <div class="grp">
+          <div class="grp" data-g="{{group.lower()}}">
             <button type="button"{{!' aria-current="page"' if any(here) else ''}}><svg class="i"><use href="#i-{{gicon}}"/></svg>{{group}}<svg class="i chev"><use href="#i-chev"/></svg></button>
             <div class="sub">
               % for (h, label, icon), cur in zip(items, here):
