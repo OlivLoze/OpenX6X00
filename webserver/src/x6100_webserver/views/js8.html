@@ -36,6 +36,93 @@
 .btn.hb.on{color:var(--cobalt);border-color:rgba(92,184,255,.6);background:rgba(92,184,255,.1)}
 .btn.acq.on{color:#120a00;background:var(--amber);border-color:var(--amber)}
 .acts{grid-template-columns:repeat(4,auto)}
+
+/* The chat view: the conversations as a messaging app, the list beside the thread (one or the other on a phone) */
+.vsw{display:inline-flex;border:1px solid var(--bord2);border-radius:6px;overflow:hidden}
+.vsw button{font:500 11px var(--f-lbl);letter-spacing:.1em;height:30px;padding:0 14px;border:0;border-radius:0;background:var(--bg2);color:var(--mut);gap:7px}
+.vsw button+button{border-left:1px solid var(--bord2)}
+.vsw button[aria-pressed=true]{background:rgba(185,155,255,.14);color:var(--violet)}
+.vsw .badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font:600 11px/18px var(--f-num);letter-spacing:0}
+.vsw .badge[hidden]{display:none}
+.chat{display:grid;grid-template-columns:330px minmax(0,1fr);height:620px;min-height:420px;background:var(--bg2);border:1px solid var(--bord);border-radius:6px;box-shadow:inset 2px 0 0 var(--cc);overflow:hidden}
+.chat[hidden],.app-wall[hidden],.desk[hidden],.cv-h[hidden],.cv-f[hidden]{display:none!important}
+.cl{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bord)}
+.cl-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bord);min-height:52px}
+.cl-h h3{font:800 20px/1 var(--f-disp);letter-spacing:.05em;text-transform:uppercase;margin:0}
+.cl-h .lbl{margin-left:auto}
+.cl-list{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2a2f3a transparent}
+.cl-sec{padding:10px 14px 4px;font:500 11px var(--f-lbl);letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.th{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.035)}
+.th:hover{background:rgba(255,255,255,.035)}
+.th.cur{background:rgba(185,155,255,.1)}
+.av{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:700 14px var(--f-num);color:#06070a;background:var(--c,var(--violet));flex:none}
+.av.grp{background:var(--bg4);color:var(--magenta);border:1px solid rgba(255,92,180,.4)}
+.av .on{position:absolute;right:0;bottom:1px;width:12px;height:12px;border-radius:50%;background:var(--cw);border:2px solid var(--bg2)}
+.th .nm{display:flex;align-items:baseline;gap:8px;min-width:0}
+.th .nm b{font:600 14px var(--f-num);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th .nm small{font:11px var(--f-num);color:var(--mut);white-space:nowrap}
+.th .pv{font:13px/1.35 var(--f-body);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.th .pv .tk{vertical-align:-2px;margin-right:3px}
+.th .rt{display:flex;flex-direction:column;align-items:flex-end;gap:5px;font:11px var(--f-num);color:var(--mut)}
+.th .un{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--cw);color:#06070a;font:700 11px/20px var(--f-num);text-align:center}
+.th.has-un .rt>span:first-child{color:var(--cw)}
+.cl-empty{padding:22px 16px;color:var(--mut);font-size:13px;line-height:1.5}
+.cv{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.cv-h{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--bord);min-height:52px;background:var(--bg3)}
+.cv-h .who{min-width:0;flex:1}
+.cv-h .who b{display:block;font:600 15px var(--f-num);color:var(--text)}
+.cv-h .who small{display:block;font:12px var(--f-body);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-h .who small.on{color:var(--cw)}
+.cv-h .back{display:none;width:36px;height:36px;padding:0;border:0;color:var(--text)}
+.cv-h .txs{font:500 11px var(--f-lbl);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);white-space:nowrap}
+.cv-h .txs.on{color:var(--red)}
+.cv-b{flex:1;overflow-y:auto;padding:14px 6% 10px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:#2a2f3a transparent;
+  background:radial-gradient(circle at 1px 1px,rgba(185,155,255,.07) 1px,transparent 1.5px) 0 0/18px 18px,#090b10}
+.day{align-self:center;margin:10px 0 6px;padding:3px 10px;border-radius:6px;background:var(--bg3);font:500 11px var(--f-lbl);letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.bub{position:relative;max-width:min(76%,560px);padding:6px 10px 4px;border-radius:10px;font:14px/1.4 var(--f-num);color:var(--text);overflow-wrap:anywhere;box-shadow:0 1px 0 rgba(0,0,0,.4);margin-top:3px}
+.bub.in{align-self:flex-start;background:var(--bg3);border-top-left-radius:3px}
+.bub.out{align-self:flex-end;background:#3a2408;border:1px solid rgba(255,145,0,.35);border-top-right-radius:3px}
+.bub.cont{margin-top:0}
+.bub.in.cont{border-top-left-radius:10px} .bub.out.cont{border-top-right-radius:10px}
+.bub.oh{opacity:.62}
+.bub .to,.bub .fr{display:block;font:600 11px var(--f-num);margin-bottom:1px}
+.bub .to{color:var(--mut)} .bub .fr{color:var(--c,var(--violet))}
+.bub .meta{float:right;display:inline-flex;align-items:center;gap:5px;margin:6px 0 -2px 12px;font:11px var(--f-num);color:var(--mut)}
+.bub.out .meta{color:rgba(255,200,140,.75)}
+.tk{width:16px;height:11px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tk.done{color:var(--cobalt)} .tk.wait{width:12px;height:12px} .tk.bad{color:var(--red)}
+.bub.air{border-color:var(--red);box-shadow:0 0 0 1px rgba(255,71,87,.35)}
+.bub .air{color:var(--red);font:600 11px var(--f-lbl);letter-spacing:.06em}
+.dots{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--mut);animation:dot 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s} .dots i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,60%,100%{opacity:.3;transform:none}30%{opacity:1;transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.dots i{animation:none}}
+.cv-empty{margin:auto;text-align:center;color:var(--mut);font-size:14px;line-height:1.6;max-width:340px}
+.cv-f{border-top:1px solid var(--bord);background:var(--bg3);padding:8px 10px 10px;display:flex;flex-direction:column;gap:7px}
+.cv-f .quick .chip{border-radius:14px;padding:3px 10px}
+.cv-in{display:flex;gap:8px;align-items:center}
+.cv-in input{flex:1;min-width:0;height:42px;border-radius:21px;padding:0 16px;background:var(--bg);border:1px solid var(--bord2);font:14px var(--f-num);text-transform:uppercase}
+.cv-in small{font:11px var(--f-num);color:var(--mut);min-width:28px;text-align:right}
+.send{width:44px;height:44px;border-radius:50%;padding:0;border:0;background:var(--amber);color:#120a00;flex:none}
+.send:hover{background:#ffa22e}
+.send:disabled{opacity:.4}
+.send svg{width:20px;height:20px;fill:currentColor;margin-left:2px}
+@media (max-width:760px){
+  .chat{display:block;height:auto!important;min-height:0;border:0;border-radius:0;box-shadow:none;background:none;margin:0 -16px}
+  .chat .cv{display:none}
+  .chat.open .cl{display:none}
+  .chat.open .cv{display:flex;position:fixed;inset:0;z-index:30;background:var(--bg)}
+  .chat.open .cv-h .back{display:grid;place-items:center}
+  .cl{border:0}
+  .cl-list{overflow:visible}
+  .bub{max-width:84%}
+  .cv-b{padding:12px 10px 8px}
+  .cv-f{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  body.chatting .mbar{display:none}
+  body.chatting main{z-index:60}   /* the open thread, fixed over the whole screen, above the site's header and footer */
+  body.chatting{overflow:hidden}
+}
 @media (max-width:760px){
   .row{grid-template-columns:56px 30px 40px minmax(0,1fr)}
   .srow{grid-template-columns:minmax(0,1fr) 36px 46px 56px}
@@ -48,7 +135,30 @@
 <div class="app-top">
   <span class="lbl"><span id="where">-</span> · <span class="num" id="utc" style="color:var(--text)">--:--:--</span> UTC</span>
   <span id="ses" class="health"></span><span class="grow"></span><span id="health" class="health"></span>
+  <span class="vsw" role="group" aria-label="View"><button type="button" id="v-console" aria-pressed="true">CONSOLE</button><button type="button" id="v-chat" aria-pressed="false">CHAT <span class="badge" id="chat-badge" hidden>0</span></button></span>
 </div>
+
+<section class="chat" id="chat" hidden aria-label="Chat">
+  <div class="cl">
+    <div class="cl-h"><h3>Chats</h3><span class="lbl"><span class="num" id="cl-n">0</span> conversations</span></div>
+    <div class="cl-list" id="cl-list"></div>
+  </div>
+  <div class="cv" id="cv">
+    <div class="cv-h" id="cv-h" hidden>
+      <button type="button" class="back" id="cv-back" aria-label="Back to the chats"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <span class="av" id="cv-av"></span>
+      <div class="who"><b id="cv-name"></b><small id="cv-sub"></small></div>
+      <span class="txs" id="cv-tx"></span>
+      <button type="button" class="btn stop" id="cv-stop" title="Stop the transmission now">Stop</button>
+    </div>
+    <div class="cv-b" id="cv-b"><div class="cv-empty" id="cv-none">Pick a chat, or a station heard, on the left.<br>Messages to you start one by themselves.</div></div>
+    <div class="cv-f" id="cv-f" hidden>
+      <div class="quick" id="cv-quick"></div>
+      <div class="cv-in"><input id="cv-msg" maxlength="480" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Message"><small id="cv-n">0</small>
+        <button type="button" class="send" id="cv-send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></div>
+    </div>
+  </div>
+</section>
 
 <section class="app-wall" id="wall">
   <div class="tabs" role="tablist" data-g="top">
@@ -267,6 +377,7 @@ at once. A click on the waterfall moves our TX offset there.</p>
     if (which === "band") $("#n-band").text(++nBand); else $("#n-talk").text(++nTalk);
   }
   function addMsg(r) {
+    chatAdd(r);
     put("band", $band, bandEl, r.id, r);
     if (concerns(r)) put("talk", $talk, talkEl, r.id, r);
     if (r.fr && !r.tx) {
@@ -380,6 +491,7 @@ at once. A click on the waterfall moves our TX offset there.</p>
     document.getElementById("cd-arc").setAttribute("stroke", j.sending ? "var(--red)" : "var(--amber)");
     $("#cd-n, #m-cd").text(j.sending ? "TX" : n >= 0 && j.open ? n : "--");
     if (j.sel !== before) { showJs8.sel = j.sel; selChanged(); }
+    if (chat.on && chat.cur) chatTx();
     wf.redraw();
   }
   setInterval(function() {
@@ -400,6 +512,221 @@ at once. A click on the waterfall moves our TX offset there.</p>
   both("#b-stop, #m-stop", function() { send("js8 stop"); });
   both("#b-dn", function() { if (js8) act("js8 txfreq " + (js8.txf - 10)); });
   both("#b-up", function() { if (js8) act("js8 txfreq " + (js8.txf + 10)); });
+
+  /* ================= the chat view ================= */
+  /* Threads: a station (what it sends, what we send it), or a group (@NAME). Heartbeats, CQs and SNR answers stay
+   * out; a thread starts with a message to us, one of ours, a group's, or a tap on a station heard. Kept in this
+   * browser (a convenience: the radio keeps its own inbox) */
+  const TICK1 = '<svg class="tk" viewBox="0 0 16 11"><path d="M1.5 6l3.2 3.2L11 2.5"/></svg>';
+  const TICK2 = '<svg class="tk done" viewBox="0 0 16 11"><path d="M1 6l3.2 3.2L10.5 2.5M6.5 8.6l.6.6L14.5 2.5"/></svg>';
+  const CLOCK = '<svg class="tk wait" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
+  const BANG = '<svg class="tk bad" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6"/><path d="M6 3.3v3.2M6 8.6v.1"/></svg>';
+  const AVC = ["#ff9100", "#5cb8ff", "#5dffaa", "#ff5cb4", "#b99bff", "#ffd860"];
+  const chat = {th: {}, msgs: [], cur: "", on: false, keys: {}, live: {}};
+  function avColor(c) { let h = 0; for (let i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) >>> 0; return AVC[h % AVC.length]; }
+  function avatar($a, name) {
+    $a.empty().removeClass("grp").css("--c", "");
+    if (name[0] === "@") $a.addClass("grp").text("@");
+    else $a.css("--c", avColor(name)).text(name.replace(/^[0-9]*/, "").slice(0, 2) || name.slice(0, 2));
+    const h = heard[name];
+    if (h && Date.now() - h.t < 300000) $a.append("<span class='on'></span>");
+  }
+  function isCall(w) { return /^[A-Z0-9]{1,3}[0-9][A-Z0-9]*[A-Z](\/[A-Z0-9]+)?$/.test(w || ""); }
+  function km(g) {
+    const a = ME, b = AppWall.loc2ll(g); if (!a || !b) return 0;
+    const r = Math.PI / 180, d = Math.sin((b[0] - a[0]) * r / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin((b[1] - a[1]) * r / 2) ** 2;
+    return Math.round(12742 * Math.asin(Math.sqrt(d)));
+  }
+  function save() {
+    try { localStorage.setItem("js8.chat", JSON.stringify(chat.msgs.filter(function(m) { return !m.part && m.st !== "wait"; }).slice(-600))); } catch (e) {}
+  }
+  /* A message as the chat sees it, null when it stays out */
+  function chatMsg(r) {
+    const body = r.x.replace(/^\s*[A-Z0-9/]+:\s*/, ""), w = body.split(/\s+/), first = w[0] || "";
+    if (r.hb || (r.cq && !r.me)) return null;
+    if (r.tx) {
+      if (/^(@HB|@ALLCALL)\b/.test(first) || /^CQ\b/.test(first)) return null;
+      const to = first[0] === "@" || isCall(first) ? first : "";
+      if (!to) return null;
+      return {th: to, dir: "out", text: body.slice(first.length).trim(), to: to};
+    }
+    if (!r.fr) return null;
+    const to = r.to || (first[0] === "@" || isCall(first) ? first : "");
+    let text = body; if (to && first === to) text = body.slice(first.length).trim();
+    if (/^SNR [+-]\d\d$/.test(text) && !r.me) return null;
+    if (to && to[0] === "@" && to !== "@ALLCALL" && to !== "@HB") return {th: to, dir: "in", text: text, fr: r.fr, to: to};
+    if (r.me) return {th: r.fr, dir: "in", text: text, to: to};
+    if (chat.th[r.fr]) return {th: r.fr, dir: "in", text: text, to: to, oh: !!to && to !== MYBASE};
+    return null;
+  }
+  function thread(name) {
+    return chat.th[name] = chat.th[name] || {name: name, last: 0, un: 0, prev: "", prevOut: false, st: ""};
+  }
+  function chatAdd(r) {
+    const c = chatMsg(r); if (!c) return;
+    const key = r.part ? "p" + r.id : [r.utc, r.fr || "ME", r.x].join("|");
+    if (!r.part && chat.keys[key]) return;
+    const old = chat.live[r.id];                 /* the same message, more of it */
+    let m = old;
+    if (!m) { m = {}; chat.msgs.push(m); }
+    Object.assign(m, c, {k: key, ts: m.ts || Date.now(), utc: r.utc, snr: r.snr, f: r.f, part: !!r.part, st: r.tx ? "sent" : ""});
+    if (r.part) chat.live[r.id] = m; else { delete chat.live[r.id]; chat.keys[key] = 1; }
+    if (r.tx) {                                  /* ours on the air: the bubble that waited for it */
+      const w = chat.msgs.find(function(x) { return x.st === "wait" && x.th === c.th && x.text === c.text; });
+      if (w) { chat.msgs.splice(chat.msgs.indexOf(w), 1); m.ts = w.ts; }
+    }
+    const t = thread(c.th); t.last = Date.now();
+    if (c.dir === "in" && !c.oh && !r.part && !(chat.on && chat.cur === c.th && !document.hidden)) t.un++;
+    if (!r.part) save();
+    chatShow();
+  }
+  function bubble(m, prev) {
+    const $b = $("<div class='bub'>").addClass(m.dir).toggleClass("oh", !!m.oh).toggleClass("cont", !!prev && prev.dir === m.dir && prev.fr === m.fr && m.ts - prev.ts < 120000);
+    if (m.fr && m.th[0] === "@" && !$b.hasClass("cont")) $b.append($("<span class='fr'>").css("--c", avColor(m.fr)).text(m.fr));
+    if (m.oh) $b.append($("<span class='to'>").text("to " + m.to));
+    $b.append(document.createTextNode(m.text || " "));
+    if (m.part) $b.append("<span class='dots'><i></i><i></i><i></i></span>");
+    const $m = $("<span class='meta'>").text(utcText(m.utc || 0).slice(0, 5) + (m.dir === "in" && typeof m.snr === "number" ? " · " + snr(m.snr) : ""));
+    if (m.dir === "out") {
+      const air = js8 && js8.sending && js8.text && js8.text.indexOf(m.text) >= 0 && m === lastOut(m.th);
+      $b.toggleClass("air", !!air);
+      $m.append(m.st === "wait" ? CLOCK : m.st === "bad" ? BANG : air ? "<span class='air'>ON AIR</span>" : TICK2);
+    }
+    return $b.append($m);
+  }
+  function lastOut(th) { for (let i = chat.msgs.length - 1; i >= 0; i--) if (chat.msgs[i].th === th && chat.msgs[i].dir === "out") return chat.msgs[i]; return null; }
+  function dayText(ts) {
+    const d = new Date(ts), t = new Date();
+    if (d.toDateString() === t.toDateString()) return "Today";
+    t.setDate(t.getDate() - 1);
+    if (d.toDateString() === t.toDateString()) return "Yesterday";
+    return d.toLocaleDateString(undefined, {day: "numeric", month: "short"});
+  }
+  let chatTimer = 0;
+  function chatShow() { if (!chatTimer) chatTimer = setTimeout(function() { chatTimer = 0; drawList(); drawThread(); }, 60); }
+  function drawList() {
+    const $l = $("#cl-list").empty(), names = Object.keys(chat.th).sort(function(a, b) { return chat.th[b].last - chat.th[a].last; });
+    let un = 0;
+    names.forEach(function(n) {
+      const t = chat.th[n], last = chat.msgs.filter(function(m) { return m.th === n; }).pop();
+      un += t.un;
+      const $a = $("<span class='av'>"); avatar($a, n);
+      const $pv = $("<div class='pv'>");
+      if (last) { if (last.dir === "out") $pv.append(last.st === "wait" ? CLOCK : TICK2); $pv.append(document.createTextNode((last.fr && n[0] === "@" ? last.fr + ": " : "") + (last.text || "…"))); }
+      else $pv.text("New chat");
+      const h = heard[n], $rt = $("<div class='rt'>").append($("<span>").text(last ? utcText(last.utc || 0).slice(0, 5) : ""));
+      if (t.un) $rt.append($("<span class='un'>").text(t.un));
+      const $t = $("<div class='th'>").toggleClass("cur", n === chat.cur).toggleClass("has-un", !!t.un)
+        .append($a, $("<div>").append($("<div class='nm'>").append($("<b>").text(n), $("<small>").text(h && h.g ? h.g.slice(0, 4) : "")), $pv), $rt);
+      $t.on("click", function() { openThread(n); });
+      $l.append($t);
+    });
+    /* stations heard with no chat yet: a tap starts one */
+    const more = Object.values(heard).filter(function(h) { return !chat.th[h.c] && Date.now() - h.t < 1800000; })
+      .sort(function(a, b) { return (b.me - a.me) || (b.t - a.t); });
+    if (more.length) {
+      $l.append($("<div class='cl-sec'>").text("Heard now · start a chat"));
+      more.forEach(function(h) {
+        const $a = $("<span class='av'>"); avatar($a, h.c);
+        const $t = $("<div class='th'>").append($a, $("<div>").append($("<div class='nm'>").append($("<b>").text(h.c), $("<small>").text(h.g || "")),
+          $("<div class='pv'>").text(snr(h.snr) + " dB · " + h.f + " Hz · " + ago(h.t) + " ago")), $("<div class='rt'>"));
+        $t.on("click", function() { thread(h.c).last = Date.now(); openThread(h.c); });
+        $l.append($t);
+      });
+    }
+    if (!names.length && !more.length) $l.append($("<div class='cl-empty'>").text("No chats yet. Messages to you start one; the stations heard show here to start one yourself."));
+    $("#cl-n").text(names.length);
+    $("#chat-badge").text(un).prop("hidden", !un);
+  }
+  function drawThread() {
+    const n = chat.cur, $b = $("#cv-b");
+    $("#cv-h, #cv-f").prop("hidden", !n);
+    if (!n) return;
+    const h = heard[n], d = h && h.g ? km(h.g) : 0;
+    avatar($("#cv-av"), n);
+    $("#cv-name").text(n);
+    const online = h && Date.now() - h.t < 300000;
+    $("#cv-sub").toggleClass("on", !!online).text(n[0] === "@" ? "Group: every station in it gets these" :
+      h ? (online ? "On the air · " : "Heard " + ago(h.t) + " ago · ") + snr(h.snr) + " dB · " + h.f + " Hz" + (h.g ? " · " + h.g : "") + (d ? " · " + d + " km" : "") : "Not heard on this band yet");
+    const atEnd = $b[0].scrollHeight - $b[0].scrollTop - $b[0].clientHeight < 60;
+    $b.empty();
+    let prev = null, day = "";
+    chat.msgs.filter(function(m) { return m.th === n; }).forEach(function(m) {
+      const dt = dayText(m.ts); if (dt !== day) { day = dt; $b.append($("<div class='day'>").text(dt)); prev = null; }
+      $b.append(bubble(m, prev)); prev = m;
+    });
+    if (!prev) $b.append($("<div class='cv-empty'>").text(n[0] === "@" ? "Nothing in " + n + " yet." : "Say hello to " + n + ": the first message goes on our next slot."));
+    if (atEnd || drawThread.last !== n) $b[0].scrollTop = $b[0].scrollHeight;
+    if (drawThread.last !== n) {                 /* the questions: built once a thread */
+      const $q = $("#cv-quick").empty();
+      if (n[0] !== "@") QUICK.concat(MYGRID ? [["My grid", "GRID " + MYGRID]] : []).forEach(function(q) {
+        $q.append($("<button type='button' class='chip'>").text(q[0]).on("click", function() { $("#cv-msg").val(q[1]).trigger("input").focus(); }));
+      });
+    }
+    drawThread.last = n;
+    drawThread.air = onAir();
+    chatTx();
+  }
+  /* What changes with the app's state alone: the header's TX word, and a redraw when ours goes on or off the air */
+  function onAir() { return !!(js8 && js8.sending) + ":" + (js8 ? js8.text : ""); }
+  function chatTx() {
+    $("#cv-tx").toggleClass("on", !!(js8 && js8.sending)).text(js8 && js8.sending ? "On the air " + js8.frame + "/" + js8.frames : js8 && js8.busy ? "Queued" : "");
+    if (chat.cur && drawThread.air !== onAir()) chatShow();
+  }
+  function openThread(n) {
+    chat.cur = n; thread(n).un = 0;
+    $("#chat").addClass("open"); document.body.classList.add("chatting");
+    if (n[0] !== "@" && sel() !== n && heard[n]) act("js8 select " + n);   /* its offset, as on the radio */
+    drawList(); drawThread();
+    if (window.innerWidth > 760) $("#cv-msg").focus();
+  }
+  $("#cv-back").on("click", function() { chat.cur = ""; $("#chat").removeClass("open"); document.body.classList.remove("chatting"); drawList(); });
+  $("#cv-msg").on("input", function() { $("#cv-n").text(this.value.length); });
+  function chatSend() {
+    const n = chat.cur, t = $("#cv-msg").val().trim().toUpperCase();
+    if (!n || !t) return;
+    if (js8 && js8.busy) { status("Already sending: Stop first", true); return; }
+    if (n[0] !== "@" && heard[n] && sel() !== n) act("js8 select " + n);
+    if (!act("js8 send " + n + " " + t)) return;
+    chat.msgs.push({th: n, dir: "out", text: t, to: n, ts: Date.now(), utc: +hms(Date.now()).replace(/:/g, ""), st: "wait", k: "w" + Date.now()});
+    const w = chat.msgs[chat.msgs.length - 1];
+    setTimeout(function() { if (w.st === "wait") { w.st = "bad"; chatShow(); status("Not sent: see the radio's screen", true); } }, 90000);
+    thread(n).last = Date.now();
+    $("#cv-msg").val("").trigger("input");
+    chatShow();
+  }
+  $("#cv-send").on("click", chatSend);
+  $("#cv-msg").on("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); chatSend(); } });
+  $("#cv-stop").on("click", function() { send("js8 stop"); });
+  /* Console or chat: this browser keeps the choice */
+  function setView(chatOn) {
+    chat.on = chatOn;
+    $("#v-console").attr("aria-pressed", String(!chatOn)); $("#v-chat").attr("aria-pressed", String(chatOn));
+    $("#wall, #desk").prop("hidden", chatOn); $("#chat").prop("hidden", !chatOn);
+    document.body.classList.toggle("chatting", chatOn && !!chat.cur && window.innerWidth <= 760);
+    if (chatOn) { if (chat.cur) thread(chat.cur).un = 0; fitChat(); chatShow(); } else { AppWall.fit(); wf.redraw(); map.draw(); }
+    try { localStorage.setItem("js8.view", chatOn ? "chat" : "console"); } catch (e) {}
+  }
+  function fitChat() {
+    const el = document.getElementById("chat");
+    if (window.innerWidth <= 760) { el.style.height = ""; return; }
+    el.style.height = Math.max(420, window.innerHeight - el.getBoundingClientRect().top - window.scrollY - 18) + "px";
+  }
+  window.addEventListener("resize", function() { if (chat.on) fitChat(); });
+  $("#v-console").on("click", function() { setView(false); });
+  $("#v-chat").on("click", function() { setView(true); });
+  (function() {
+    try {
+      (JSON.parse(localStorage.getItem("js8.chat") || "[]")).forEach(function(m) {
+        chat.msgs.push(m); chat.keys[m.k] = 1;
+        const t = thread(m.th); t.last = Math.max(t.last, m.ts || 0);
+      });
+    } catch (e) {}
+    let v = null; try { v = localStorage.getItem("js8.view"); } catch (e) {}
+    if (v === "chat") setView(true);
+    drawList();
+  })();
+  setInterval(function() { if (chat.on) { drawList(); if (chat.cur) drawThread(); } }, 15000);
 
   AppWall.tabs("js8", function(id) { if (id === "m-map") map.draw(); if (id === "m-wf") wf.redraw(); });
 
