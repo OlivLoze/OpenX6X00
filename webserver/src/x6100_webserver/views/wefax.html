@@ -1,0 +1,240 @@
+% rebase('base.html', title='WeFax')
+<style>
+/* The WeFax page (F4OLI): the radio's WeFax app from the browser. The radio receives, decodes and saves on its
+ * own card; the page shows its picture row by row and works its buttons. Receive only. SPDX-License-Identifier: LGPL-2.1-or-later */
+.wf-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.wf-bar .grow{flex:1}
+.wf-state{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;font:500 12px/1.4 var(--f-lbl,monospace);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.wf-state b{font:600 15px/1 var(--f-num,monospace);letter-spacing:0;text-transform:none;color:var(--text)}
+.wf-state .on{color:var(--ok)} .wf-state .wait{color:var(--accent)} .wf-state .off{color:var(--dim)} .wf-state .tx{color:var(--err)}
+.wf-pic{position:relative;background:#fff;border-radius:4px;overflow:hidden;min-height:180px;display:flex;align-items:center;justify-content:center}
+.wf-pic canvas,.wf-pic img{display:block;width:100%;height:auto;image-rendering:auto}
+.wf-pic .empty{color:#555;font-size:14px;padding:40px 16px;text-align:center}
+.wf-pic .lbl{position:absolute;left:8px;top:8px;background:rgba(6,7,10,.78);color:#e8e3d4;font:500 11px/1.4 var(--f-lbl,monospace);letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px}
+.wf-st{display:flex;flex-wrap:wrap;gap:6px 10px;margin:0 0 12px}
+.wf-st h4{width:100%;margin:6px 0 0;font:500 11px/1 var(--f-lbl,monospace);letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.wf-st button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:96px}
+.wf-st button small{font:500 13px/1 var(--f-num,monospace);letter-spacing:0;text-transform:none;color:var(--dim)}
+.wf-st button.here{border-color:var(--cc,var(--accent));box-shadow:inset 0 -2px 0 var(--cc,var(--accent))}
+.wf-st button.here small{color:var(--text)}
+.wf-own{display:flex;gap:8px;max-width:340px}
+.wf-last{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.wf-last a{display:block;color:var(--text);text-decoration:none;font:500 12px/1.4 var(--f-num,monospace)}
+.wf-last img{width:100%;aspect-ratio:3/2;object-fit:cover;object-position:top;background:#fff;border-radius:4px;display:block;margin-bottom:4px}
+.wf-last a:hover img{outline:1px solid var(--cc,var(--accent))}
+</style>
+<h2><svg class="i"><use href="#i-image"/></svg>WeFax</h2>
+<p class="sub">The radio's WeFax app from here: the radio receives, decodes and saves each chart on its own card, with or
+without a network beyond this page; this page shows the chart as it comes in, picks the station and works the
+app's buttons. Receive only: nothing here transmits.</p>
+
+<div class="wf-bar"><span id="ses" class="health"></span><span class="grow"></span><span id="health" class="health"></span></div>
+
+<div class="dp-card">
+  <div class="dp-head"><span class="dp-ico"><svg class="i"><use href="#i-waterfall"/></svg></span>
+    <div><h3>Chart</h3><p id="where">-</p></div>
+    <div class="dp-x"><span class="wf-state"><span id="phase" class="off">closed</span></span></div></div>
+  <div class="dp-body">
+    <div class="wf-state" style="margin-bottom:12px">
+      <span>Signal <b id="sig">--</b></span><span>Rows <b id="rows">0</b></span><span>Saved <b id="saves">-</b></span>
+    </div>
+    <div class="wf-pic" id="pic"><div class="empty">Nothing yet: open the app, pick a station, and the chart shows here as it comes in.</div></div>
+    <div class="actions">
+      <button type="button" class="primary" id="b-open">Open the app</button>
+      <span class="seg" id="b-mode"><button type="button" data-m="auto" aria-pressed="false">RX Auto</button><button type="button" data-m="cont" aria-pressed="false">RX Cont</button></span>
+      <button type="button" id="b-save">Save now</button>
+      <button type="button" id="b-clear">Clear</button>
+      <span class="status" id="st"></span>
+    </div>
+  </div>
+</div>
+
+<div class="dp-card">
+  <div class="dp-head"><span class="dp-ico"><svg class="i"><use href="#i-antenna"/></svg></span>
+    <div><h3>Stations</h3><p>The radio goes to the station in USB, 1.5 kHz under its published frequency (the app's own tuning); taking control first</p></div></div>
+  <div class="dp-body">
+    <div class="wf-st" id="stations"></div>
+    <div class="wf-own"><input id="own" inputmode="decimal" placeholder="Other, kHz (published)"><button type="button" id="b-own">Tune</button></div>
+  </div>
+</div>
+
+<div class="dp-card">
+  <div class="dp-head"><span class="dp-ico"><svg class="i"><use href="#i-folder"/></svg></span>
+    <div><h3>Last charts</h3><p>Saved on the radio's card (/mnt/wefax); all of them in the <a href="/gallery">Gallery</a></p></div></div>
+  <div class="dp-body"><div class="wf-last" id="last"><span class="meta">None yet</span></div></div>
+</div>
+
+<script src="/static/js/radio_link.js?v=2"></script>
+<script src="/static/js/radio_session.js?v=8"></script>
+<script>
+(function() {
+  "use strict";
+  const STATIONS = [
+    ["DWD (DE)", [["DDH3", 3855.0, "night"], ["DDK3", 7880.0, "day and night"], ["DDK6", 13882.5, "day"]]],
+    ["Northwood (UK)", [["GYA", 2618.5, "night"], ["GYA", 4610.0, ""], ["GYA", 8040.0, "day"], ["GYA", 11086.5, "day"]]],
+    ["Athens (GR)", [["SVJ4", 4481.0, ""], ["SVJ4", 8105.0, ""]]],
+  ];
+  const CENTER = 1500;          /* the app tunes the dial this far under the station */
+  const WIDTH = 1809;           /* the decoder's row */
+  const secure = location.protocol === "https:";
+  let link = null, ses = null, conf = null, fax = null, lastSaves = -1;
+  let canvas = null, ctx = null, rowsDrawn = 0, lastRow = null, picGen = -1;
+
+  const $st = $("#st");
+  function status(text, error) { $st.toggleClass("error", !!error).text(text || ""); }
+  function send(s) { return !!link && link.send(s); }
+  /* What changes the radio: paired with operate, and in control (the buttons above say how) */
+  function act(s) {
+    if (!link || !link.up) { status("The radio is not connected", true); return false; }
+    if (link.stalled) { status("The radio does not answer: nothing is sent until it does", true); return false; }
+    const why = ses.can();
+    if (why) { status(why, true); ses.explain(); return false; }
+    return send(s);
+  }
+
+  /* ---- the chart, row by row ---- */
+  function newPicture() {
+    const pic = document.getElementById("pic");
+    pic.innerHTML = "";
+    canvas = document.createElement("canvas");
+    canvas.width = WIDTH; canvas.height = 1;
+    ctx = canvas.getContext("2d");
+    pic.appendChild(canvas);
+    const l = document.createElement("span"); l.className = "lbl"; l.textContent = "Live"; pic.appendChild(l);
+    rowsDrawn = 0; lastRow = null;
+  }
+  function putRow(n, px) {
+    if (!canvas || n <= rowsDrawn - 1 || n === 1 && rowsDrawn > 1) newPicture();
+    /* grow by blocks: a resize clears the canvas, keep what was drawn */
+    if (n > canvas.height) {
+      const keep = rowsDrawn ? ctx.getImageData(0, 0, WIDTH, rowsDrawn) : null;
+      canvas.height = Math.max(n, canvas.height + 200);
+      if (keep) ctx.putImageData(keep, 0, 0);
+    }
+    const img = ctx.createImageData(WIDTH, 1), d = img.data;
+    for (let i = 0; i < WIDTH; i++) { const g = px[i]; d[4 * i] = d[4 * i + 1] = d[4 * i + 2] = g; d[4 * i + 3] = 255; }
+    /* a row lost on the way: the one before stands in for it */
+    for (let y = rowsDrawn; y < n - 1; y++) if (lastRow) ctx.putImageData(lastRow, 0, y);
+    ctx.putImageData(img, 0, n - 1);
+    lastRow = img; rowsDrawn = n;
+  }
+  function onBinary(buf) {
+    if (buf.byteLength < 8) return;
+    const dv = new DataView(buf);
+    if (dv.getUint16(0, true) !== 0xFFFE) return;          /* the spectrum, which the panel subscription brings too */
+    const w = dv.getUint16(2, true), n = dv.getUint32(4, true);
+    if (w !== WIDTH || buf.byteLength < 8 + w) return;
+    putRow(n, new Uint8Array(buf, 8, w));
+  }
+  /* No chart coming in: the last one the radio saved */
+  function showSaved(name) {
+    if (!name || (canvas && fax && fax.fax)) return;
+    const pic = document.getElementById("pic");
+    pic.innerHTML = '<img alt="">' + '<span class="lbl"></span>';
+    pic.querySelector("img").src = "/gallery/file/wefax/" + encodeURIComponent(name);
+    pic.querySelector(".lbl").textContent = "Last saved · " + name.replace(/^wefax-|\.png$/g, "");
+    canvas = null;
+  }
+
+  /* ---- the app's state ---- */
+  function showFax() {
+    const f = fax;
+    const ph = document.getElementById("phase");
+    let txt = "closed", cls = "off";
+    if (f.open) {
+      if (f.tx) { txt = "transmitting " + f.txp + "%"; cls = "tx"; }
+      else if (f.fax) { txt = "receiving"; cls = "on"; }
+      else { txt = f.auto ? "waiting for a start" : "listening"; cls = "wait"; }
+    }
+    ph.textContent = txt; ph.className = cls;
+    document.getElementById("where").textContent = f.open ? (f.station ? f.station + " · " : "") + (f.freq / 1000).toFixed(1) + " kHz" : "The app is closed on the radio";
+    document.getElementById("rows").textContent = f.rows;
+    document.getElementById("saves").textContent = f.saved ? f.saved.replace(/^wefax-|\.png$/g, "") : "-";
+    $("#b-open").text(f.open ? "Close the app" : "Open the app").toggleClass("primary", !f.open);
+    $("#b-mode button").each(function() { this.setAttribute("aria-pressed", String(f.open && (this.dataset.m === "auto") === !!f.auto)); this.disabled = !f.open; });
+    $("#b-save, #b-clear").prop("disabled", !f.open);
+    if (f.gen !== picGen) { picGen = f.gen; if (f.fax) newPicture(); }
+    if (f.saves !== lastSaves) { if (lastSaves >= 0 || !canvas) loadLast(); lastSaves = f.saves; if (!f.fax) showSaved(f.saved); }
+    markStation();
+  }
+  function markStation() {
+    const khz = fax && fax.open ? fax.freq / 1000 : (state ? (state.freq + CENTER) / 1000 : 0);
+    $("#stations button").each(function() { this.classList.toggle("here", Math.abs(parseFloat(this.dataset.k) - khz) < 0.3); });
+  }
+  let state = null;
+
+  function tune(khz) {
+    const dial = Math.round(khz * 1000) - CENTER;
+    if (!act("set freq " + dial)) return;
+    send("set mode 2");                       /* USB: a band change brings the band plan's mode (LSB in 80 m) */
+    status("Tuned " + khz.toFixed(1) + " kHz");
+  }
+
+  function loadLast() {
+    $.get("/api/gallery", {kind: "wefax"}).then(function(items) {
+      const $l = $("#last").empty();
+      if (!items.length) { $l.append('<span class="meta">None yet</span>'); return; }
+      items.slice(0, 8).forEach(function(it) {
+        const name = encodeURIComponent(it.name);
+        const a = $('<a target="_blank"><img loading="lazy" alt=""><span></span></a>').attr("href", "/gallery/file/wefax/" + name);
+        a.find("img").attr("src", "/gallery/thumb/wefax/" + name);
+        a.find("span").text(it.name.replace(/^wefax-|\.png$/g, "").replace(/(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)\d\d/, "$3/$2 $4:$5"));
+        $l.append(a);
+      });
+      if (!fax || !fax.fax) showSaved(items[0].name);
+    });
+  }
+
+  function onText(t) {
+    const sp = t.indexOf(" "), head = sp < 0 ? t : t.slice(0, sp), body = sp < 0 ? "" : t.slice(sp + 1);
+    try {
+      if (ses.onText(head, body)) { RadioLink.health(document.getElementById("health"), ses.chips()); return; }
+      if (head === "wefax") { fax = JSON.parse(body); showFax(); }
+      else if (head === "state") { state = Object.assign(state || {}, JSON.parse(body)); markStation(); }
+      else if (head === "m") document.getElementById("sig").textContent = parseFloat(body).toFixed(0) + " dBm";
+      else if (head === "err") status(body, true);
+    } catch (e) { status("Bad message: " + e, true); }
+  }
+
+  /* ---- buttons ---- */
+  STATIONS.forEach(function(g) {
+    const $s = $("#stations");
+    $s.append($("<h4>").text(g[0]));
+    g[1].forEach(function(s) {
+      const b = $('<button type="button"></button>').attr("data-k", s[1]);
+      b.text(s[0]).append($("<small>").text(s[1].toFixed(1) + (s[2] ? " · " + s[2] : "")));
+      b.on("click", function() { tune(s[1]); });
+      $s.append(b);
+    });
+  });
+  $("#b-own").on("click", function() {
+    const k = parseFloat(String($("#own").val()).replace(",", "."));
+    if (!(k >= 1800 && k <= 30000)) { status("A frequency in kHz, 1800 to 30000", true); return; }
+    tune(k);
+  });
+  $("#b-open").on("click", function() { act(fax && fax.open ? "wefax close" : "wefax open"); });
+  $("#b-mode").on("click", "button", function() { act("wefax " + this.dataset.m); });
+  $("#b-save").on("click", function() { if (act("wefax save")) status("Saving on the radio..."); });
+  $("#b-clear").on("click", function() { if (confirm("Clear the chart on the radio? What was not saved is lost.")) act("wefax clear"); });
+
+  function wsUrl() {
+    if (secure) return "wss://" + location.host + "/ws/remote";
+    return "ws://" + location.hostname + ":" + conf.port + "/";
+  }
+  link = RadioLink.create({
+    url: function() {
+      return $.get("/api/remote").then(function(c) { conf = c; return c.enabled ? wsUrl() : null; }, function() { return null; });
+    },
+    ping: "ping",
+    onOpen: function() { ses.onOpen(); send("screen 0"); send("panel 1"); send("wefax rows 1"); status("Connected"); },
+    onText: onText,
+    onBinary: onBinary,
+    onClose: function() { status(conf && !conf.enabled ? "The remote is off on the radio (Remote page)" : "Not connected: trying again...", true); },
+    onStall: function(on) { if (on) status("The radio does not answer", true); else status("Connected"); },
+  });
+  ses = RadioSession.create({send: send, status: status, el: document.getElementById("ses"),
+    onChange: function() { RadioLink.health(document.getElementById("health"), ses.chips()); }});
+  link.connect();
+  loadLast();
+})();
+</script>

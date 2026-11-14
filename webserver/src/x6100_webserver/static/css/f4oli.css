@@ -10,7 +10,7 @@
 
 :root{
   --bg:#06070a;--bg2:#0d0f14;--bg3:#13161d;--bg4:#1a1e27;
-  --amber:#ff9100;--solar:#ffd860;--cw:#5dffaa;--cobalt:#5cb8ff;--magenta:#ff5cb4;--red:#ff4757;
+  --amber:#ff9100;--violet:#b99bff;--solar:#ffd860;--cw:#5dffaa;--cobalt:#5cb8ff;--magenta:#ff5cb4;--red:#ff4757;
   --txt:#e8e3d4;--mut:#a9a497;
   --bord:rgba(255,255,255,.07);--bord2:rgba(255,255,255,.16);
   /* upstream's names, so every page's var(--...) follows */
@@ -28,6 +28,7 @@ body[data-grp=remote],[data-g=remote]{--cc:var(--cobalt)}
 body[data-grp=frequencies],[data-g=frequencies]{--cc:var(--solar)}
 body[data-grp=operating],[data-g=operating]{--cc:var(--cw)}
 body[data-grp=files],[data-g=files]{--cc:var(--magenta)}
+body[data-grp=apps],[data-g=apps]{--cc:var(--violet)}
 body[data-grp=system],[data-g=system]{--cc:var(--amber)}
 body[data-grp=general],[data-g=general]{--cc:var(--amber)}
 
@@ -61,9 +62,9 @@ header{background:linear-gradient(180deg,rgba(13,15,20,.96),rgba(6,7,10,.92));bo
 .bar{padding:10px 20px;gap:14px}
 .brand{font:800 22px/1 var(--f-disp);letter-spacing:.12em;text-transform:uppercase;color:var(--txt);gap:10px}
 .brand svg{width:26px;height:26px}
-.brand small{font:500 11px/1 var(--f-lbl);letter-spacing:.2em;color:var(--mut);margin-left:6px;text-transform:uppercase}
+.brand small{font:500 11px/1 var(--f-lbl);letter-spacing:.14em;color:var(--mut);margin-left:6px;text-transform:uppercase}
 nav{gap:2px}
-nav a,nav .grp>button{font:500 11.5px/1 var(--f-lbl);letter-spacing:.11em;text-transform:uppercase;color:var(--mut);padding:9px 11px;border-radius:4px;position:relative}
+nav a,nav .grp>button{font:500 11.5px/1 var(--f-lbl);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);padding:9px 11px;border-radius:4px;position:relative}
 nav a::before,nav .grp>button::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--cc);opacity:.55;flex:none}
 nav>a .i,nav .grp>button .i:not(.chev){display:none}
 nav a:hover,nav .grp>button:hover,nav .grp:focus-within>button{color:var(--txt);background:var(--bg3)}
@@ -108,6 +109,7 @@ a.tile[href="/panel"],a.tile[href="/remote"],a.tile[href="/tailscale"]{--cc:var(
 a.tile[href="/bands"],a.tile[href="/digital_modes"],a.tile[href="/memories"]{--cc:var(--solar)}
 a.tile[href="/cluster"],a.tile[href="/field"],a.tile[href="/wavelog"],a.tile[href="/winlink"],a.tile[href="/cw_messages"],a.tile[href="/macros"],a.tile[href="/logs"]{--cc:var(--cw)}
 a.tile[href^="/files"],a.tile[href="/gallery"],a.tile[href="/backup"]{--cc:var(--magenta)}
+a.tile[href="/wefax"],a.tile[href="/ft8"],a.tile[href="/js8"],a.tile[href="/olivia"]{--cc:var(--violet)}
 
 /* Labels, table heads: small capitals in Plex Mono; numbers in JetBrains Mono */
 label,th,.meta,.eff,.rst,.hc,.ses,.tag{font-family:var(--f-lbl)}
@@ -201,3 +203,5 @@ footer a{color:#a09b8f}
   h2{font-size:30px}
   .card{padding:16px}
 }
+
+@media (min-width:641px){nav a,nav .grp>button{padding:9px 9px}nav .grp>button .i.chev{margin-left:-4px}}

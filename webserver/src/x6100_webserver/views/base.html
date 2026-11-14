@@ -4,7 +4,7 @@
     <title>{{title}} - X6100 WebServer</title><link rel="icon" href="/static/favicon.ico" type="image/vnd.microsoft.icon">
     <link href="/static/css/base.css?v=10" rel="stylesheet">  <!-- v: new after a style change, browsers keep the old one -->
     <link rel="stylesheet" href="/static/css/siimple-icons.css">
-    <link href="/static/css/f4oli.css?v=1" rel="stylesheet">  <!-- F4OLI fork: the Pi-station look, on top of base.css -->
+    <link href="/static/css/f4oli.css?v=3" rel="stylesheet">  <!-- F4OLI fork: the Pi-station look, on top of base.css -->
     <script src="/static/js/jquery-3.7.1.min.js"></script>
     <script>
       const mode_map = ["LSB", "LSB-D", "USB", "USB-D", "CW", "CW-R", "AM", "NFM", "SAM", "WFM"];   // x6100_mode_t, index = value in params.db
@@ -67,6 +67,7 @@
   </head>
     % menu = [('General', 'home', [('/', 'General', 'home')]),
     %         ('Remote', 'sliders', [('/panel', 'Panel', 'sliders'), ('/remote', 'Screen', 'monitor'), ('/tailscale', 'Tailscale', 'lock')]),
+    %         ('Apps', 'waterfall', [('/wefax', 'WeFax', 'image')]),
     %         ('Frequencies', 'wave', [('/bands', 'Bands', 'bands'), ('/digital_modes', 'Digital modes', 'pulse'), ('/memories', 'Memories', 'bookmark')]),
     %         ('Operating', 'antenna', [('/cluster', 'Cluster', 'globe'), ('/field', 'Field Ops', 'mountain'), ('/wavelog', 'Wavelog', 'upload'), ('/winlink', 'Winlink', 'file'), ('/cw_messages', 'CW messages', 'cw'), ('/macros', 'Macros', 'list'), ('/logs', 'Logs', 'book')]),
     %         ('Files', 'folder', [('/files/', 'Files', 'sd'), ('/gallery', 'Gallery', 'image'), ('/backup', 'Backup', 'archive')]),
