@@ -458,6 +458,11 @@ def wefax_page():
     return bottle.template('wefax')
 
 
+@app.route('/ft8')
+def ft8_page():
+    return bottle.template('ft8', grid=read_param("qth"))
+
+
 # The Panel page (views/panel.html): the radio worked natively over the same WebSocket
 @app.route('/panel')
 def panel():

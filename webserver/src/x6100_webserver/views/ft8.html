@@ -1,0 +1,747 @@
+% rebase('base.html', title='FT8')
+<style>
+/* The FT8 page (F4OLI): the radio's FT8 app from the browser, as a wall of four screens and a desk: the app's
+ * waterfall, the stations on a map, the band's decodes, what concerns our QSO, and the app's buttons. The radio
+ * decodes, answers and logs on its own; the page shows and commands. Every asset comes from the radio (no
+ * network beyond it). SPDX-License-Identifier: LGPL-2.1-or-later */
+.bar,main{max-width:1480px}
+main h2{margin-bottom:6px}
+.ft-top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:0 0 10px}
+.ft-top .grow{flex:1}
+.ft-wall{display:grid;grid-template-columns:1.12fr 1fr;grid-template-rows:1fr 1fr;gap:8px;height:620px;min-height:480px}
+.mon{background:var(--bg2);border:1px solid var(--bord);border-radius:6px;box-shadow:inset 2px 0 0 var(--cc);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.mh{display:flex;align-items:center;gap:9px;padding:5px 10px 5px 12px;border-bottom:1px solid var(--bord);flex:none;min-height:34px}
+.mh h3{font:800 17px/1 var(--f-disp);letter-spacing:.06em;text-transform:uppercase;margin:0;color:var(--text)}
+.mh .meta{margin-left:auto;display:flex;align-items:center;gap:10px;white-space:nowrap}
+.lbl{font:500 11px/1.3 var(--f-lbl);letter-spacing:.09em;text-transform:uppercase;color:var(--mut)}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.led{width:7px;height:7px;border-radius:50%;background:var(--c,var(--cw));box-shadow:0 0 6px var(--c,var(--cw));flex:none}
+.led.off{--c:#3a3f4a;box-shadow:none}
+.mb{flex:1;min-height:0;position:relative}
+.chip{font:500 11px var(--f-lbl);letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--bord2);border-radius:4px;color:var(--mut);background:none;gap:5px}
+.chip:hover{color:var(--text);border-color:rgba(255,255,255,.3)}
+.chip[aria-pressed=true]{color:var(--cobalt);border-color:rgba(92,184,255,.5)}
+
+/* the waterfall: the app's own, the audio it decodes */
+.wf{display:flex;flex-direction:column;height:100%}
+.scale{height:20px;position:relative;flex:none;border-bottom:1px solid var(--bord);background:var(--bg3);overflow:hidden}
+.scale span{position:absolute;top:3px;transform:translateX(-50%);font:11px var(--f-num);color:var(--mut)}
+.scale i{position:absolute;bottom:0;width:1px;height:4px;background:var(--bord2)}
+.wfb{position:relative;flex:1;min-height:0;overflow:hidden;cursor:crosshair;background:#000}
+.wfb canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#wfc{image-rendering:pixelated}
+.wfb .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:16px;color:var(--mut);font-size:13px;pointer-events:none}
+.wfb .empty[hidden]{display:none}
+
+/* the decode lists */
+.list{position:absolute;inset:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2a2f3a transparent}
+.row{display:grid;grid-template-columns:62px 32px 44px minmax(0,1fr) minmax(0,140px);gap:6px;align-items:center;padding:2px 10px 2px 12px;font:12px/1.5 var(--f-num);font-variant-numeric:tabular-nums;border-left:2px solid transparent}
+.row.go{cursor:pointer}
+.row.go:hover,.row.hl{background:rgba(255,255,255,.045)}
+.row .r{text-align:right;color:var(--mut)}
+.row .u{color:var(--mut)}
+.row .m{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--text)}
+.row .k{font:11px var(--f-body);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.thead{position:sticky;top:0;z-index:2;background:var(--bg3);border-bottom:1px solid var(--bord)}
+.thead>*{font:500 11px var(--f-lbl)!important;letter-spacing:.08em;color:var(--mut)!important}
+.sep{display:flex;align-items:center;gap:8px;padding:5px 12px 2px;font:500 11px var(--f-lbl);letter-spacing:.09em;color:var(--solar)}
+.sep::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(255,216,96,.35),transparent)}
+.note{padding:2px 12px;font:12px/1.5 var(--f-body);color:var(--mut);font-style:italic}
+.t-cq .m{color:var(--cw)} .t-pota .m{color:var(--solar)} .t-dx .m{color:var(--magenta)}
+.t-me{background:rgba(255,71,87,.13);border-left-color:var(--red)} .t-me .m{color:#fff}
+.t-me.go:hover{background:rgba(255,71,87,.2)}
+.t-wk{opacity:.55} .t-wk .m{font-weight:400}
+.t-wk .m svg{width:12px;height:12px;stroke:var(--cw);fill:none;stroke-width:2.4;vertical-align:-1px;margin-right:4px}
+.t-tx{background:rgba(255,71,87,.08);border-left-color:var(--red)} .t-tx .m,.t-tx .u{color:var(--red)}
+.t-start{border-left:2px dashed var(--amber);background:rgba(255,145,0,.06)} .t-start .m{color:var(--amber)}
+.logged{display:flex;align-items:center;gap:8px;margin:4px 12px;padding:3px 8px;border:1px solid rgba(93,255,170,.3);border-radius:4px;font:500 11px var(--f-lbl);letter-spacing:.08em;color:var(--cw)}
+.list .empty{padding:18px 14px;color:var(--mut);font-size:13px}
+
+/* the map */
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;background:#080b11}
+#land{fill:#1a2030;stroke:#3a4560;stroke-width:.7}
+.mapkey{position:absolute;left:8px;bottom:8px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;background:rgba(6,7,10,.84);padding:4px 8px;border-radius:4px;border:1px solid var(--bord);max-width:calc(100% - 16px)}
+.mapkey span{display:flex;align-items:center;gap:4px;font:500 11px var(--f-lbl);letter-spacing:.06em;color:var(--mut)}
+.mapkey i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.qsoinfo{position:absolute;right:8px;top:8px;background:rgba(6,7,10,.86);border:1px solid rgba(255,145,0,.4);border-radius:4px;padding:4px 9px;font:12px var(--f-num)}
+.qsoinfo b{color:var(--amber)}
+@keyframes ring{from{opacity:.9;transform:scale(1)}to{opacity:0;transform:scale(3.2)}}
+.pulse{animation:ring 1.6s ease-out infinite;transform-box:fill-box;transform-origin:center}
+
+/* the desk */
+.desk{margin-top:8px;background:var(--bg2);border:1px solid var(--bord);border-radius:6px;box-shadow:inset 2px 0 0 var(--cc);display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;padding:10px 12px 10px 14px;align-items:center}
+.grp{display:flex;flex-direction:column;gap:7px;min-width:0}
+.line{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn{font:500 11px var(--f-lbl);letter-spacing:.09em;text-transform:uppercase;height:30px;padding:0 11px;border:1px solid var(--bord2);border-radius:4px;background:var(--bg3);color:var(--text);gap:6px;white-space:nowrap}
+.btn:hover{border-color:rgba(255,255,255,.32)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn small{font:600 13px var(--f-num);letter-spacing:0;text-transform:none}
+.btn.open{color:var(--cw);border-color:rgba(93,255,170,.5)}
+.btn.armed{color:#fff;background:rgba(255,71,87,.22);border-color:var(--red)}
+.btn.cq.on{color:#120a00;background:var(--amber);border-color:var(--amber)}
+.btn.auto.on{color:var(--cw);border-color:rgba(93,255,170,.6);background:rgba(93,255,170,.1)}
+.btn.hold.on{color:var(--cobalt);border-color:rgba(92,184,255,.6);background:rgba(92,184,255,.1)}
+.btn.stop{color:var(--red);border-color:rgba(255,71,87,.6)}
+.btn.stop:hover,.btn.stop.down{background:var(--red);color:#fff}
+.txhz{display:inline-flex;align-items:center;border:1px solid var(--bord2);border-radius:4px;height:30px;background:var(--bg3)}
+.txhz button{width:28px;height:28px;padding:0;border:0;border-radius:0;color:var(--mut);font:600 15px var(--f-num)}
+.txhz button:hover{color:var(--text)}
+.txhz span{font:600 14px var(--f-num);color:var(--red);min-width:50px;text-align:center}
+.steps{display:flex;align-items:center}
+.st{display:flex;align-items:center;gap:6px;font:500 11px var(--f-lbl);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);white-space:nowrap}
+.st i{width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;flex:none}
+.st small{font:11px var(--f-num);letter-spacing:0;text-transform:none;color:var(--mut)}
+.st.done{color:var(--cw)} .st.done i{background:var(--cw)}
+.st.cur{color:var(--amber)} .st.cur i{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+.st.tx{color:var(--red)} .st.tx i{background:var(--red);box-shadow:0 0 7px var(--red)}
+.st.off{opacity:.45}
+.steps b{flex:1;height:1px;background:var(--bord2);margin:0 8px;min-width:10px}
+.txgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.tx{display:flex;align-items:center;gap:6px;height:26px;padding:0 7px;border:1px solid var(--bord);border-radius:4px;background:var(--bg3);font:12px var(--f-num);color:var(--mut);min-width:0}
+.tx b{font:500 11px var(--f-lbl);letter-spacing:.06em;flex:none}
+.tx span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx.done{opacity:.55} .tx.done span{text-decoration:line-through;text-decoration-color:rgba(232,227,212,.4)}
+.tx.next{border-color:var(--amber);background:rgba(255,145,0,.13);color:var(--text);box-shadow:0 0 0 1px rgba(255,145,0,.3)}
+.tx.next b{color:var(--amber)}
+.tx.next.live{border-color:var(--red);background:rgba(255,71,87,.18)} .tx.next.live b{color:var(--red)}
+.nextline{font:13px/1.4 var(--f-body);color:var(--mut);min-height:18px}
+.nextline b{font:600 13px var(--f-num);color:var(--amber)}
+.nextline.stop{color:var(--red)}
+.cd{display:flex;align-items:center;gap:12px}
+.ringcd{position:relative;width:64px;height:64px;flex:none}
+.ringcd svg{width:64px;height:64px;transform:rotate(-90deg)}
+.ringcd circle{fill:none;stroke-width:4}
+.ringcd div{position:absolute;inset:0;display:grid;place-items:center}
+.ringcd strong{font:800 24px/1 var(--f-disp);color:var(--text)}
+.acts{display:grid;grid-template-columns:repeat(3,auto);gap:6px}
+.ft-help{margin:10px 0 0;font-size:12px}
+.tabs,.mbar{display:none}
+
+/* phone: the waterfall on top, the rest in tabs, the buttons under the thumb */
+@media (max-width:760px){
+  .ft-wall{display:block;height:auto!important;min-height:0}
+  .mon{margin-bottom:8px}
+  #m-wf .mb{height:150px;flex:none}
+  .wfx{display:none}
+  .tabs{display:flex;gap:4px;margin:0 0 8px}
+  .tabs button{flex:1;height:38px;padding:0;font:500 11px var(--f-lbl);letter-spacing:.1em;border:1px solid var(--bord2);border-radius:4px;background:var(--bg2);color:var(--mut);gap:6px}
+  .tabs button[aria-selected=true]{color:var(--violet);border-color:var(--violet);background:rgba(185,155,255,.1)}
+  .tabs .n{font:11px var(--f-num)}
+  .pane{display:none}
+  .pane.show{display:flex}
+  .pane .mb{height:58vh;min-height:300px;flex:none}
+  .row{grid-template-columns:56px 30px 40px minmax(0,1fr);padding:4px 10px 4px 12px}
+  .row .k{display:none}
+  .desk{display:none}
+  main{padding-bottom:150px}
+  .mbar{display:flex;flex-direction:column;gap:7px;position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(13,15,20,.97);border-top:1px solid var(--bord2);box-shadow:inset 0 2px 0 var(--cc);padding:8px 16px calc(8px + env(safe-area-inset-bottom))}
+  .mbar .top{display:flex;align-items:center;gap:10px}
+  .mbar .nx{flex:1;min-width:0;display:flex;flex-direction:column}
+  #m-next{font:600 13px var(--f-num);color:var(--amber);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #m-next.tx{color:var(--red)}
+  .mbar .cds{font:800 28px/1 var(--f-disp);color:var(--text);min-width:44px;text-align:right}
+  .mbar .acts2{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+  .mbar .btn{height:42px;padding:0 4px}
+}
+</style>
+
+<h2><svg class="i"><use href="#i-pulse"/></svg>FT8</h2>
+<div class="ft-top">
+  <span class="lbl"><span id="where">-</span> · <span class="num" id="utc" style="color:var(--text)">--:--:--</span> UTC</span>
+  <span id="ses" class="health"></span><span class="grow"></span><span id="health" class="health"></span>
+</div>
+
+<section class="ft-wall" id="wall">
+  <article class="mon" id="m-wf">
+    <div class="mh"><span class="led off" id="led-wf"></span><h3>Waterfall</h3>
+      <span class="lbl wfx" id="wf-sub">the app's audio</span>
+      <div class="meta"><span class="lbl wfx">Click: TX here</span></div></div>
+    <div class="mb"><div class="wf">
+      <div class="scale" id="scale"></div>
+      <div class="wfb" id="wfb"><canvas id="wfc" width="480" height="256"></canvas><canvas id="wfo"></canvas>
+        <div class="empty" id="wf-empty">The app is closed: Open starts it on the radio, and its waterfall shows here.</div></div>
+    </div></div>
+  </article>
+
+  <div class="tabs" role="tablist" id="tabs">
+    <button type="button" role="tab" data-t="m-dec" aria-selected="true">DECODES <span class="n" id="n-dec">0</span></button>
+    <button type="button" role="tab" data-t="m-rx" aria-selected="false">QSO <span class="n" id="n-rx">0</span></button>
+    <button type="button" role="tab" data-t="m-map" aria-selected="false">MAP <span class="n" id="n-map">0</span></button>
+  </div>
+
+  <article class="mon pane" id="m-map">
+    <div class="mh"><span class="led" style="--c:var(--cobalt)"></span><h3>Map</h3>
+      <span class="lbl"><span id="mygrid">-</span> · <span class="num" id="nst">0</span> stations</span>
+      <div class="meta"><button type="button" class="chip" id="z-near" aria-pressed="true">Near</button><button type="button" class="chip" id="z-world" aria-pressed="false">World</button></div></div>
+    <div class="mb">
+      <svg id="map" viewBox="150 15 75 46" preserveAspectRatio="xMidYMid slice" aria-label="Stations heard, at their locator">
+        <defs><pattern id="gr" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="rgba(92,184,255,.09)" stroke-width=".15"/></pattern></defs>
+        <rect x="-360" y="0" width="1080" height="180" fill="url(#gr)"/>
+        <path id="land" vector-effect="non-scaling-stroke" d=""/>
+        <g id="gc"></g><g id="dots"></g>
+      </svg>
+      <div class="qsoinfo" id="qsoinfo" hidden>QSO <b id="q-call"></b> <span id="q-more"></span></div>
+      <div class="mapkey">
+        <span style="--c:var(--cw)"><i></i>CQ</span><span style="--c:var(--solar)"><i></i>POTA</span><span style="--c:var(--magenta)"><i></i>CQ DX</span><span style="--c:var(--red)"><i></i>Calling me</span><span style="--c:var(--cobalt)"><i></i>Other</span><span style="--c:var(--amber)"><i></i>Me</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="mon pane show" id="m-dec">
+    <div class="mh"><span class="led" style="--c:var(--solar)"></span><h3>Band activity</h3>
+      <span class="lbl"><span class="num" id="slotn">0</span> last slot</span>
+      <div class="meta"><button type="button" class="chip" id="b-clear">Clear</button></div></div>
+    <div class="mb"><div class="list" id="dec">
+      <div class="row thead"><span>UTC</span><span class="r">dB</span><span class="r">Hz</span><span>Message</span><span class="k">Country · km</span></div>
+      <div class="empty" id="dec-empty">No decodes yet. A tap on a CQ or a call answers it in our next slot.</div>
+    </div></div>
+  </article>
+
+  <article class="mon pane" id="m-rx">
+    <div class="mh"><span class="led" style="--c:var(--red)"></span><h3>QSO</h3>
+      <span class="lbl">to me, from me, with <span id="rx-dx">-</span></span></div>
+    <div class="mb"><div class="list" id="rx">
+      <div class="row thead"><span>UTC</span><span class="r">dB</span><span class="r">Hz</span><span>Message</span><span class="k">Country · km</span></div>
+      <div class="empty" id="rx-empty">Nothing for us yet: our transmissions and the stations calling us show here.</div>
+    </div></div>
+  </article>
+</section>
+
+<section class="desk" id="desk" aria-label="The app's buttons">
+  <div class="grp">
+    <div class="line">
+      <button type="button" class="btn" id="b-open">Open</button>
+      <button type="button" class="btn" id="b-mode" title="FT8, FT4, FT2: the app's protocol">Mode <small id="v-mode">FT8</small></button>
+    </div>
+    <div class="line">
+      <span class="lbl">TX Hz</span>
+      <span class="txhz"><button type="button" id="b-dn" aria-label="TX 10 Hz down">−</button><span id="v-txf">----</span><button type="button" id="b-up" aria-label="TX 10 Hz up">+</button></span>
+    </div>
+  </div>
+  <div class="grp">
+    <div class="steps" id="steps">
+      <span class="st" data-s="listen"><i></i>Listening</span><b></b>
+      <span class="st" data-s="queued"><i></i>Queued <small></small></span><b></b>
+      <span class="st" data-s="slot"><i></i>Next slot <small></small></span><b></b>
+      <span class="st" data-s="sending"><i></i>Sending</span><b></b>
+      <span class="st" data-s="logged"><i></i>Logged <small></small></span>
+    </div>
+    <div class="txgrid" id="txgrid" title="The QSO's messages, as the app sends them one after the other: it picks the next itself"></div>
+    <div class="nextline" id="next">The app is closed: Open starts it on the radio.</div>
+  </div>
+  <div class="cd">
+    <div class="ringcd" title="Seconds to our next slot"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" stroke="rgba(255,255,255,.08)"/><circle id="cd-arc" cx="32" cy="32" r="28" stroke="var(--amber)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round"/></svg><div><strong id="cd-n">--</strong></div></div>
+    <div class="acts">
+      <button type="button" class="btn" id="b-tx" title="TX: armed, the queued message goes out in its slot; off, the app only listens and decodes">TX off</button>
+      <button type="button" class="btn cq" id="b-cq" title="Call CQ every slot of ours until a station answers">CQ</button>
+      <button type="button" class="btn auto" id="b-auto" title="Answer by itself a station that calls us, and carry the QSO through; it never calls CQ on its own">Auto</button>
+      <button type="button" class="btn hold" id="b-hold" title="Hold the TX frequency: do not move onto the station answered">Hold</button>
+      <button type="button" class="btn stop" id="b-stop" title="Stop the transmission, drop the queued message, CQ off, TX off">Stop</button>
+      <span class="status" id="st"></span>
+    </div>
+  </div>
+</section>
+
+<div class="mbar" id="mbar">
+  <div class="top"><div class="nx"><span class="lbl">Next</span><span id="m-next">-</span></div><div class="cds num" id="m-cd">--</div></div>
+  <div class="acts2">
+    <button type="button" class="btn" id="m-open">Open</button>
+    <button type="button" class="btn" id="m-tx">TX off</button>
+    <button type="button" class="btn cq" id="m-cq">CQ</button>
+    <button type="button" class="btn auto" id="m-auto">Auto</button>
+    <button type="button" class="btn stop" id="m-stop">Stop</button>
+  </div>
+</div>
+
+<p class="sub ft-help">All of it runs on the radio: it decodes, calls and answers with or without this page, and CQ and
+Auto go on when the page closes or loses its link. A tap on a CQ or a call queues one reply for our next slot and arms
+TX; a click on the waterfall moves our TX frequency there. TX off makes a dry run: the app listens, decodes and queues,
+and nothing keys the transmitter.</p>
+
+<script src="/static/js/radio_link.js?v=2"></script>
+<script src="/static/js/radio_session.js?v=8"></script>
+<script>
+(function() {
+  "use strict";
+  const MYCALL = "{{callsign()}}".toUpperCase(), MYGRID = "{{grid}}".toUpperCase();
+  const MYBASE = MYCALL.split("/").reduce(function(a, b) { return b.length > a.length ? b : a; }, "");
+  const PROTOS = ["FT4", "FT8", "FT2"], WIDTHS = [83, 50, 42];   /* a signal's width, Hz */
+  const secure = location.protocol === "https:";
+  let link = null, ses = null, conf = null, ft8 = null, ft8At = 0, state = null, stopped = false;
+  let openedAt = 0, skew = 0;      /* the radio's clock minus ours, from its slot rows */
+
+  const $st = $("#st");
+  function status(text, error) { $st.toggleClass("error", !!error).text(text || ""); }
+  function send(s) { return !!link && link.send(s); }
+  function act(s) {
+    if (!link || !link.up) { status("The radio is not connected", true); return false; }
+    if (link.stalled) { status("The radio does not answer: nothing is sent until it does", true); return false; }
+    const why = ses.can();
+    if (why) { status(why, true); ses.explain(); return false; }
+    return send(s);
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function hms(ms) { const d = new Date(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()) + ":" + pad(d.getUTCSeconds()); }
+  function radioNow() { return Date.now() + skew; }
+  /* "12:00:15" today on the radio's clock, ms */
+  function slotMs(t) {
+    const now = radioNow(), d = new Date(now);
+    let ms = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), +t.slice(0, 2), +t.slice(3, 5), +t.slice(6, 8));
+    if (ms > now + 60000) ms -= 86400000;
+    return ms;
+  }
+  function snr(n) { return (n >= 0 ? "+" : "-") + pad(Math.abs(n)); }
+
+  /* ---- locators ---- */
+  function loc2ll(g) {
+    g = (g || "").toUpperCase();
+    if (!/^[A-R]{2}[0-9]{2}/.test(g)) return null;
+    let lon = (g.charCodeAt(0) - 65) * 20 - 180 + (+g[2]) * 2, lat = (g.charCodeAt(1) - 65) * 10 - 90 + (+g[3]);
+    if (/^[A-X]{2}$/.test(g.slice(4, 6))) { lon += (g.charCodeAt(4) - 65) / 12 + 1 / 24; lat += (g.charCodeAt(5) - 65) / 24 + 1 / 48; }
+    else { lon += 1; lat += 0.5; }
+    return [lat, lon];
+  }
+  const ME = loc2ll(MYGRID);
+  $("#mygrid").text(MYGRID || "no locator");
+
+  /* ================= the waterfall ================= */
+  const wfc = document.getElementById("wfc"), wctx = wfc.getContext("2d");
+  const wfo = document.getElementById("wfo"), octx = wfo.getContext("2d"), wfb = document.getElementById("wfb");
+  const ROWS = wfc.height;
+  let wfN = 0, wfLo = 0, wfHi = 3000, rowT = [], palette = null, wfLast = 0;
+  (function() {
+    const stops = [[0, 6, 7, 10], [0.3, 14, 34, 110], [0.55, 30, 160, 220], [0.8, 255, 216, 96], [1, 255, 255, 255]];
+    palette = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      const t = i / 255; let k = 0;
+      while (k < stops.length - 2 && t > stops[k + 1][0]) k++;
+      const a = stops[k], b = stops[k + 1], u = (t - a[0]) / (b[0] - a[0]);
+      for (let c = 0; c < 3; c++) palette[i * 3 + c] = Math.round(a[c + 1] + (b[c + 1] - a[c + 1]) * u);
+    }
+  })();
+  wctx.fillStyle = "#000"; wctx.fillRect(0, 0, wfc.width, ROWS);
+  function hzX(hz, w) { return (hz - wfLo) * w / (wfHi - wfLo); }
+  function drawScale() {
+    const $s = $("#scale").empty();
+    for (let hz = Math.ceil(wfLo / 250) * 250; hz <= wfHi; hz += 250) {
+      const p = (hz - wfLo) * 100 / (wfHi - wfLo);
+      $s.append($("<i>").css("left", p + "%"));
+      if (hz % 500 === 0 && p > 3 && p < 97) $s.append($("<span>").css("left", p + "%").text(hz));
+    }
+  }
+  drawScale();
+  function wfRow(buf) {
+    const dv = new DataView(buf), n = dv.getUint16(2, true), lo = dv.getUint16(4, true), hi = dv.getUint16(6, true);
+    if (!n || buf.byteLength < 8 + n) return;
+    if (n !== wfN || lo !== wfLo || hi !== wfHi) {
+      wfN = n; wfLo = lo; wfHi = hi; wfc.width = n; rowT = [];
+      wctx.fillStyle = "#000"; wctx.fillRect(0, 0, n, ROWS);
+      drawScale();
+    }
+    const db = new Int8Array(buf, 8, n);
+    wctx.drawImage(wfc, 0, 1);
+    const img = wctx.createImageData(n, 1), d = img.data;
+    for (let i = 0; i < n; i++) {
+      const v = Math.max(0, Math.min(255, Math.round(db[i] * 255 / 30)));   /* 0..30 dB over the floor, as the radio */
+      d[i * 4] = palette[v * 3]; d[i * 4 + 1] = palette[v * 3 + 1]; d[i * 4 + 2] = palette[v * 3 + 2]; d[i * 4 + 3] = 255;
+    }
+    wctx.putImageData(img, 0, 0);
+    rowT.unshift(radioNow());
+    if (rowT.length > ROWS) rowT.length = ROWS;
+    wfLast = Date.now();
+    document.getElementById("wf-empty").hidden = true;
+    overlay();
+  }
+  /* Over the picture: the slots' edges and times, the calls decoded in each at their frequency, our TX */
+  const slotCalls = {};      /* slot ms: [{c, f, cls}] */
+  function overlay() {
+    const dpr = window.devicePixelRatio || 1, W = wfb.clientWidth, H = wfb.clientHeight;
+    if (wfo.width !== Math.round(W * dpr) || wfo.height !== Math.round(H * dpr)) { wfo.width = Math.round(W * dpr); wfo.height = Math.round(H * dpr); }
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, W, H);
+    if (!wfN) return;
+    const rh = H / ROWS, slot = ft8 && ft8.slot ? ft8.slot : 15000;
+    octx.font = "600 11px 'JetBrains Mono',monospace"; octx.textBaseline = "top";
+    /* each slot seen: from its newest row (top) to its first (bottom) */
+    let i = 0;
+    while (i < rowT.length) {
+      const s = Math.floor(rowT[i] / slot) * slot;
+      let j = i; while (j + 1 < rowT.length && rowT[j + 1] >= s) j++;
+      const yTop = i * rh, yBot = (j + 1) * rh;
+      if (j + 1 < rowT.length) {
+        octx.strokeStyle = "rgba(232,227,212,.3)"; octx.setLineDash([4, 4]); octx.beginPath(); octx.moveTo(0, yBot + .5); octx.lineTo(W, yBot + .5); octx.stroke(); octx.setLineDash([]);
+        const t = hms(s), ty = Math.max(1, yBot - 15); octx.fillStyle = "rgba(6,7,10,.7)"; octx.fillRect(W - 62, ty, 58, 14);
+        octx.fillStyle = "#a9a497"; octx.font = "400 11px 'JetBrains Mono',monospace"; octx.fillText(t, W - 59, ty + 1); octx.font = "600 11px 'JetBrains Mono',monospace";
+      }
+      const calls = slotCalls[s];
+      if (calls && yBot - yTop > 18) {
+        const lanes = [];
+        calls.forEach(function(c) {
+          const tw = octx.measureText(c.c).width + 6, x = Math.max(0, Math.min(W - tw, hzX(c.f + 25, W) - tw / 2));
+          let l = 0; while (lanes[l] && lanes[l].some(function(r) { return x < r[1] + 3 && x + tw > r[0] - 3; })) l++;
+          if (l > 2) return;
+          (lanes[l] = lanes[l] || []).push([x, x + tw]);
+          const y = yTop + 3 + l * 16; if (y + 14 > yBot) return;
+          octx.fillStyle = "rgba(6,7,10,.8)"; octx.fillRect(x, y, tw, 14);
+          octx.fillStyle = c.col; octx.fillText(c.c, x + 3, y + 1);
+        });
+      }
+      i = j + 1;
+    }
+    /* our TX frequency */
+    if (ft8 && ft8.open) {
+      const x0 = hzX(ft8.txf, W), x1 = hzX(ft8.txf + (WIDTHS[ft8.proto] || 50), W);
+      octx.fillStyle = "rgba(255,71,87,.12)"; octx.fillRect(x0, 0, x1 - x0, H);
+      octx.strokeStyle = "#ff4757"; octx.beginPath(); octx.moveTo(x0 + .5, 0); octx.lineTo(x0 + .5, H); octx.moveTo(x1 - .5, 0); octx.lineTo(x1 - .5, H); octx.stroke();
+      octx.font = "500 11px 'IBM Plex Mono',monospace";
+      const lx = Math.min(W - 28, x0); octx.fillStyle = "#ff4757"; octx.fillRect(lx, H - 16, 26, 16);
+      octx.fillStyle = "#fff"; octx.fillText("TX", lx + 6, H - 14);
+    }
+  }
+  window.addEventListener("resize", function() { fit(); overlay(); });
+  wfb.addEventListener("click", function(e) {
+    if (!wfN) return;
+    const r = wfb.getBoundingClientRect(), hz = Math.round((wfLo + (e.clientX - r.left) * (wfHi - wfLo) / r.width - 25) / 5) * 5;
+    if (act("ft8 txfreq " + hz)) status("TX " + hz + " Hz");
+  });
+
+  /* ================= the map ================= */
+  const svgNS = "http://www.w3.org/2000/svg", stations = {};
+  let mapView = "near", hlCall = "", dx = "";
+  fetch("/static/img/world.svg?v=1").then(function(r) { return r.text(); }).then(function(t) {
+    const m = /\sd="([^"]+)"/.exec(t); if (m) document.getElementById("land").setAttribute("d", m[1]);
+  }).catch(function() {});
+  function xy(ll) { return [ll[1] + 180, 90 - ll[0]]; }
+  function setView(v) {
+    mapView = v;
+    $("#z-near").attr("aria-pressed", String(v === "near")); $("#z-world").attr("aria-pressed", String(v === "world"));
+    const c = ME ? xy(ME) : [182, 42];
+    document.getElementById("map").setAttribute("viewBox", v === "world" ? "0 8 360 160" : (c[0] - 38) + " " + (c[1] - 21) + " 76 44");
+    drawMap();
+  }
+  $("#z-near").on("click", function() { setView("near"); });
+  $("#z-world").on("click", function() { setView("world"); });
+  /* The great circle from us to ll, as a polyline broken where it crosses the edge of the map */
+  function greatCircle(a, b) {
+    const r = Math.PI / 180, p1 = [a[0] * r, a[1] * r], p2 = [b[0] * r, b[1] * r];
+    const v = function(p) { return [Math.cos(p[0]) * Math.cos(p[1]), Math.cos(p[0]) * Math.sin(p[1]), Math.sin(p[0])]; };
+    const A = v(p1), B = v(p2), w = Math.acos(Math.max(-1, Math.min(1, A[0] * B[0] + A[1] * B[1] + A[2] * B[2])));
+    let d = "", last = null;
+    for (let i = 0; i <= 64; i++) {
+      const t = i / 64, s1 = w ? Math.sin((1 - t) * w) / Math.sin(w) : 1 - t, s2 = w ? Math.sin(t * w) / Math.sin(w) : t;
+      const x = s1 * A[0] + s2 * B[0], y = s1 * A[1] + s2 * B[1], z = s1 * A[2] + s2 * B[2];
+      const p = xy([Math.atan2(z, Math.hypot(x, y)) / r, Math.atan2(y, x) / r]);
+      d += (last === null || Math.abs(p[0] - last) > 180 ? "M" : "L") + p[0].toFixed(2) + " " + p[1].toFixed(2);
+      last = p[0];
+    }
+    return d;
+  }
+  const COL = {me: "#ff4757", pota: "#ffd860", dx: "#ff5cb4", cq: "#5dffaa", oth: "#5cb8ff", wk: "#6b6f78"};
+  function drawMap() {
+    const g = document.getElementById("dots"), gc = document.getElementById("gc");
+    g.textContent = ""; gc.textContent = "";
+    const vb = document.getElementById("map").viewBox.baseVal, u = vb.width / 160, now = Date.now();
+    let n = 0;
+    const list = Object.values(stations).sort(function(a, b) { return a.t - b.t; });
+    const target = stations[dx];
+    if (ME && target && target.ll) {
+      const p = document.createElementNS(svgNS, "path");
+      p.setAttribute("d", greatCircle(ME, target.ll)); p.setAttribute("fill", "none"); p.setAttribute("stroke", "#ff9100");
+      p.setAttribute("stroke-width", 1.6); p.setAttribute("stroke-dasharray", "5 4"); p.setAttribute("vector-effect", "non-scaling-stroke");
+      gc.appendChild(p);
+    }
+    list.forEach(function(s) {
+      const age = (now - s.t) / 60000;
+      if (age > 30) { delete stations[s.c]; return; }
+      n++;
+      const p = xy(s.ll), big = s.c === dx || s.c === hlCall || s.cls === "me";
+      const c = document.createElementNS(svgNS, "circle");
+      c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", (big ? 1.5 : 1) * u);
+      c.setAttribute("fill", COL[s.cls]); c.setAttribute("fill-opacity", Math.max(0.25, 1 - age / 15).toFixed(2));
+      const tt = document.createElementNS(svgNS, "title"); tt.textContent = s.c + " " + s.g + (s.k ? " · " + s.k : "") + (s.d ? " · " + s.d + " km" : "");
+      c.appendChild(tt); g.appendChild(c);
+      if (big) {
+        const ring = document.createElementNS(svgNS, "circle");
+        ring.setAttribute("cx", p[0]); ring.setAttribute("cy", p[1]); ring.setAttribute("r", 1.5 * u); ring.setAttribute("fill", "none");
+        ring.setAttribute("stroke", COL[s.cls]); ring.setAttribute("stroke-width", 1.2); ring.setAttribute("vector-effect", "non-scaling-stroke");
+        ring.setAttribute("class", "pulse"); g.appendChild(ring);
+        label(g, p, s.c, COL[s.cls], u);
+      }
+    });
+    if (ME) {
+      const p = xy(ME), m = document.createElementNS(svgNS, "rect");
+      m.setAttribute("x", p[0] - 1.3 * u); m.setAttribute("y", p[1] - 1.3 * u); m.setAttribute("width", 2.6 * u); m.setAttribute("height", 2.6 * u);
+      m.setAttribute("fill", "#ff9100"); m.setAttribute("transform", "rotate(45 " + p[0] + " " + p[1] + ")"); g.appendChild(m);
+      label(g, p, MYBASE || "ME", "#ff9100", u);
+    }
+    $("#nst").text(n); $("#n-map").text(n);
+  }
+  function label(g, p, text, col, u) {
+    const t = document.createElementNS(svgNS, "text");
+    t.setAttribute("x", p[0] + 2.2 * u); t.setAttribute("y", p[1] + 1.2 * u); t.setAttribute("fill", col);
+    t.setAttribute("font-size", 3.6 * u); t.setAttribute("font-family", "JetBrains Mono,monospace"); t.setAttribute("font-weight", 600);
+    t.setAttribute("paint-order", "stroke"); t.setAttribute("stroke", "#06070a"); t.setAttribute("stroke-width", 0.8 * u);
+    t.textContent = text; g.appendChild(t);
+  }
+  setInterval(drawMap, 30000);
+
+  /* ================= the decodes ================= */
+  const $dec = $("#dec"), $rx = $("#rx"), decEl = $dec[0], rxEl = $rx[0];
+  const CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>';
+  let lastSlot = { dec: "", rx: "" }, pendingSep = "", slotCount = 0, curSlotT = "", nDec = 0, nRx = 0;
+  function kind(r, msg) {
+    if (r.t === 4) return "me";
+    if (r.t === 3) return r.w ? "wk" : r.p || /^CQ POTA /.test(msg) ? "pota" : /^CQ DX /.test(msg) ? "dx" : "cq";
+    return "oth";
+  }
+  function where(r) {
+    const dist = r.d ? (r.mi ? Math.round(r.d * 0.621371) + " mi" : r.d + " km") : "";
+    return [r.k, dist].filter(Boolean).join(" · ");
+  }
+  function follow(el, fn) {
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    fn();
+    if (atEnd) el.scrollTop = el.scrollHeight;
+  }
+  function trim($l, max) { const rows = $l.children(".row:not(.thead),.sep,.note,.logged"); if (rows.length > max) rows.slice(0, rows.length - max).remove(); }
+  function makeRow(r, t, msg, cls) {
+    const go = r.t >= 2 && r.t <= 4;
+    const $r = $("<div class='row'>").addClass("t-" + cls).toggleClass("go", go).attr("data-c", r.c || "");
+    const $m = $("<span class='m'>").text(msg);
+    if (cls === "wk") $m.prepend(CHECK);
+    $r.append($("<span class='u'>").text(t), $("<span class='r'>").text(go ? snr(r.snr) : ""), $("<span class='r'>").text(go ? r.f : ""), $m, $("<span class='k'>").text(go ? where(r) : ""));
+    if (go) {
+      $r.attr("title", "Answer " + (r.c || "") + " in our next slot");
+      $r.on("click", function() { if (act("ft8 reply " + r.id)) status("Answering " + (r.c || msg)); });
+      $r.on("mouseenter", function() { hlCall = r.c; drawMap(); }).on("mouseleave", function() { hlCall = ""; drawMap(); });
+    }
+    return $r;
+  }
+  function addTo(which, $l, el, $row, t) {
+    follow(el, function() {
+      if (t && lastSlot[which] !== t) { lastSlot[which] = t; $l.append($("<div class='sep'>").text(t + (which === "dec" && pendingSep ? " · " + pendingSep : ""))); }
+      $l.append($row);
+      trim($l, which === "dec" ? 400 : 150);
+    });
+    $("#" + which + "-empty").remove();
+  }
+  function isMine(r, msg) {
+    if (r.t === 1 || r.t === 4 || r.t === 5) return true;
+    if (!dx) return false;
+    const w = msg.split(" ");
+    return r.c === dx || w[0] === dx || w[1] === dx;
+  }
+  function addRow(r) {
+    const live = Date.now() - openedAt > 2500;
+    const m = /^(\d\d:\d\d:\d\d) ?(.*)$/.exec(r.x), t = m ? m[1] : "", msg = m ? m[2] : r.x;
+    if (r.t === 0) {
+      const rx = /^RX (.*) (\d\d:\d\d:\d\d)/.exec(r.x);
+      if (rx) {
+        pendingSep = rx[1]; curSlotT = rx[2]; slotCount = 0;
+        /* posted as the slot starts: a radio clock more than 2 s off ours moves the waterfall's times with it */
+        if (live) { const off = slotMs(rx[2]) - Date.now(); skew = Math.abs(off) > 2000 && Math.abs(off) < 3600000 ? off : 0; }
+        return;
+      }
+      $("#dec-empty").remove();
+      follow(decEl, function() { $dec.append($("<div class='note'>").text(r.x)); });
+      return;
+    }
+    if (r.t === 1) { const w = /with (\S+)/i.exec(r.x); if (w) setDx(w[1]); }
+    const cls = r.t === 5 ? "tx" : r.t === 1 ? "start" : kind(r, msg);
+    if (r.t >= 2 && r.t <= 4) {
+      addTo("dec", $dec, decEl, makeRow(r, t, msg, cls), t);
+      $("#n-dec").text(++nDec); if (t === curSlotT) $("#slotn").text(++slotCount);
+      const ll = loc2ll(r.g);
+      if (r.c) {
+        const old = stations[r.c];
+        if (ll) stations[r.c] = {c: r.c, g: r.g, ll: ll, cls: cls, t: Date.now(), k: r.k, d: r.d, snr: r.snr};
+        else if (old) { old.t = Date.now(); old.cls = cls; old.snr = r.snr; }
+      }
+      if (t) {
+        const s = slotMs(t), col = COL[cls];
+        (slotCalls[s] = slotCalls[s] || []).push({c: r.c || msg.split(" ")[1] || msg, f: r.f, col: col});
+        Object.keys(slotCalls).forEach(function(k) { if (k < s - 600000) delete slotCalls[k]; });
+      }
+    }
+    if (isMine(r, msg)) { addTo("rx", $rx, rxEl, makeRow(r, t, msg, cls), t); $("#n-rx").text(++nRx); }
+    drawMapSoon(); overlay();
+  }
+  let mapTimer = 0;
+  function drawMapSoon() { if (!mapTimer) mapTimer = setTimeout(function() { mapTimer = 0; drawMap(); }, 300); }
+  function setDx(c) {
+    c = (c || "").replace(/^<(.*)>$/, "$1");
+    if (c === dx) return;
+    dx = c; $("#rx-dx").text(dx || "-");
+    showQso(); drawMapSoon();
+  }
+  function showQso() {
+    const s = stations[dx];
+    $("#qsoinfo").prop("hidden", !dx);
+    $("#q-call").text(dx);
+    $("#q-more").text(s ? "· " + s.g.slice(0, 4) + (s.d ? " · " + s.d + " km" : "") : "");
+  }
+  $("#b-clear").on("click", function() {
+    $dec.children(":not(.thead)").remove(); lastSlot.dec = ""; nDec = 0; $("#n-dec").text(0);
+  });
+
+  /* ================= the app's state and the desk ================= */
+  function slotIn() { return ft8 && ft8.in >= 0 ? Math.max(0, ft8.in - (Date.now() - ft8At)) : -1; }
+  /* The QSO's six messages, the next one lit; the app sends them itself in this order */
+  function qsoKind(m) {
+    if (/^CQ[ _]/.test(m)) return 6;
+    if (/ (RR73|RRR)$/.test(m)) return 4;
+    if (/ 73$/.test(m)) return 5;
+    if (/ R[+-]\d\d$/.test(m)) return 3;
+    if (/ [+-]\d\d$/.test(m)) return 2;
+    if (/ [A-R]{2}\d\d$/.test(m)) return 1;
+    return 0;
+  }
+  function showTx(f) {
+    const msg = f && f.next ? f.next.replace(/^CQ_/, "CQ ") : "", k = qsoKind(msg);
+    const g4 = MYGRID.slice(0, 4), me = MYCALL || "MYCALL", s = stations[dx];
+    const rep = snr(s && typeof s.snr === "number" ? s.snr : -10);
+    const d = dx || "…";
+    const msgs = [d + " " + me + " " + g4, d + " " + me + " " + rep, d + " " + me + " R" + rep, d + " " + me + " RR73", d + " " + me + " 73", "CQ " + me + " " + g4];
+    if (k) msgs[k - 1] = msg;
+    const $g = $("#txgrid").empty();
+    msgs.forEach(function(m, i) {
+      const n = i + 1, $t = $("<div class='tx'>").append($("<b>").text("Tx" + n), $("<span>").text(m));
+      if (n === k) $t.addClass("next").toggleClass("live", !!(f && f.sending));
+      else if (f && f.qso && k && k < 6 && n < k) $t.addClass("done");
+      $g.append($t);
+    });
+  }
+  function showFt8() {
+    const f = ft8; if (!f) return;
+    const msg = f.next ? f.next.replace(/^CQ_/, "CQ ") : "", queued = !!msg, armed = !!f.tx, cq = /^CQ /.test(msg);
+    if (f.sending || f.cq || (msg && f.tx)) stopped = false;
+    if (queued && !cq) setDx(msg.split(" ")[0]);
+    const slotS = (f.slot || 15000) / 1000, ms = slotIn(), inS = ms >= 0 ? Math.ceil(ms / 1000) : -1;
+    $("#b-open, #m-open").text(f.open ? "Close" : "Open").toggleClass("open", !!f.open);
+    $("#v-mode").text(PROTOS[f.proto] || "FT8");
+    $("#v-txf").text(f.txf);
+    $("#b-tx, #m-tx").text(armed ? "TX armed" : "TX off").toggleClass("armed", armed && !!f.open);
+    $("#b-cq, #m-cq").toggleClass("on", !!f.cq);
+    $("#b-auto, #m-auto").toggleClass("on", !!f.auto);
+    $("#b-hold").toggleClass("on", !!f.hold);
+    $("#b-stop, #m-stop").toggleClass("down", !!f.sending);
+    $("#desk .btn:not(#b-open), #mbar .btn:not(#m-open)").prop("disabled", !f.open);
+    $("#b-stop, #m-stop").prop("disabled", false);
+    $("#led-wf").toggleClass("off", !f.open || Date.now() - wfLast > 5000);
+    if (!f.open) { const e = document.getElementById("wf-empty"); e.hidden = false; e.textContent = "The app is closed: Open starts it on the radio, and its waterfall shows here."; }
+    else if (!wfN) { const e = document.getElementById("wf-empty"); e.hidden = false; e.textContent = "Waiting for the app's waterfall (the radio's firmware sends it from the F4OLI build on)."; }
+    /* the steps */
+    const stage = !f.open ? "" : f.sending ? "sending" : queued && armed ? "slot" : queued ? "queued" : f.logged_s >= 0 && f.logged_s < 90 ? "logged" : "listen";
+    const order = ["listen", "queued", "slot", "sending", "logged"], at = order.indexOf(stage);
+    const sub = {queued: queued ? (cq ? "CQ" : "to " + dx) : "", slot: queued && armed && inS >= 0 ? inS + " s" : "",
+                 logged: f.logged && f.logged_s >= 0 ? f.logged : ""};
+    $("#steps .st").each(function() {
+      const k = this.dataset.s, i = order.indexOf(k);
+      this.className = "st " + (k === stage ? (k === "sending" ? "tx" : "cur") : at > i && stage !== "listen" && stage !== "logged" ? "done" : "") + (!f.open || (k === "slot" && queued && !armed) ? " off" : "");
+      const s = this.querySelector("small"); if (s) s.textContent = sub[k] || "";
+    });
+    /* the line: what happens next, in words */
+    const $n = $("#next").empty().removeClass("stop");
+    let mtext = "-", mtx = false;
+    if (!f.open) $n.text("The app is closed: Open starts it on the radio.");
+    else if (f.nocall) $n.text("No callsign set on the radio (Settings > Station): the app decodes but never transmits.");
+    else if (f.sending) { $n.append("On the air now: ", $("<b>").text(msg), f.rep > 0 ? " (" + f.rep + " more without an answer)" : ""); mtext = msg; mtx = true; }
+    else if (stopped) { $n.addClass("stop").text("Stopped: nothing transmits until CQ, a tap on a call or TX arms it again."); }
+    else if (queued && armed) { $n.append("Next: ", $("<b>").text(msg), " in " + inS + " s, every " + (2 * slotS) + " s", cq ? " until a station answers" : f.rep > 0 ? ", " + f.rep + " more tries" : "", f.hound ? " (Hound)" : "", "."); mtext = msg; }
+    else if (queued) { $n.append("Queued, not armed: ", $("<b>").text(msg), ". TX off: a dry run."); mtext = msg + " (TX off)"; }
+    else if (f.qso) $n.text("In a QSO, nothing due: waiting for the other station" + (f.auto ? ", Auto answers it." : "; tap its message to answer."));
+    else $n.text("Listening. " + (f.auto ? "Auto answers a station calling us. " : "") + (armed ? "CQ calls; a tap on a CQ answers it." : "TX off: CQ or a tap arms it."));
+    $("#m-next").text(mtext).toggleClass("tx", mtx);
+    /* the countdown */
+    const frac = ms >= 0 ? ms / (2 * slotS * 1000) : 0;
+    document.getElementById("cd-arc").setAttribute("stroke-dashoffset", (176 * (1 - frac)).toFixed(1));
+    document.getElementById("cd-arc").setAttribute("stroke", f.sending ? "var(--red)" : "var(--amber)");
+    $("#cd-n, #m-cd").text(f.sending ? "TX" : inS >= 0 && f.open ? inS : "--");
+    showTx(f);
+    if (f.logged && f.logged_s >= 0 && f.logged_s < 3 && f.logged !== showFt8.logged) {
+      showFt8.logged = f.logged;
+      follow(rxEl, function() { $rx.append($("<div class='logged'>").text("QSO logged · " + f.logged)); });
+    }
+    overlay();
+  }
+  setInterval(function() {
+    $("#utc").text(hms(radioNow()));
+    if (ft8 && ft8.open) showFt8();
+  }, 1000);
+  showTx(null);
+
+  /* the buttons: the same on the desk and on the phone's bar */
+  function both(ids, fn) { $(ids).on("click", fn); }
+  both("#b-open, #m-open", function() { act("ft8 " + (ft8 && ft8.open ? "close" : "open")); });
+  both("#b-mode", function() { act("ft8 mode"); });
+  both("#b-tx, #m-tx", function() { act("ft8 txcall"); });
+  both("#b-cq, #m-cq", function() { act("ft8 cq"); });
+  both("#b-auto, #m-auto", function() { act("ft8 auto"); });
+  both("#b-hold", function() { act("ft8 hold"); });
+  both("#b-stop, #m-stop", function() { if (send("ft8 stop")) { stopped = true; showFt8(); } });
+  both("#b-dn", function() { if (ft8) act("ft8 txfreq " + (ft8.txf - 10)); });
+  both("#b-up", function() { if (ft8) act("ft8 txfreq " + (ft8.txf + 10)); });
+
+  /* the phone's tabs */
+  $("#tabs").on("click", "button", function() {
+    $("#tabs button").attr("aria-selected", "false"); $(this).attr("aria-selected", "true");
+    $(".pane").removeClass("show"); $("#" + this.dataset.t).addClass("show");
+    if (this.dataset.t === "m-map") drawMap();
+  });
+
+  /* the wall fills the window under the page's top, the desk under it */
+  function fit() {
+    const wall = document.getElementById("wall");
+    if (window.innerWidth <= 760) { wall.style.height = ""; return; }
+    const top = wall.getBoundingClientRect().top + window.scrollY, desk = document.getElementById("desk").offsetHeight;
+    wall.style.height = Math.max(480, window.innerHeight - top - desk - 18) + "px";
+  }
+
+  function bands(hz) {
+    const B = [[1800, 2000, "160 m"], [3500, 4000, "80 m"], [5300, 5410, "60 m"], [7000, 7300, "40 m"], [10100, 10150, "30 m"], [14000, 14350, "20 m"],
+               [18068, 18168, "17 m"], [21000, 21450, "15 m"], [24890, 24990, "12 m"], [28000, 29700, "10 m"], [50000, 54000, "6 m"]];
+    const k = hz / 1000, b = B.find(function(x) { return k >= x[0] && k <= x[1]; });
+    return b ? b[2] : "";
+  }
+  function onText(t) {
+    const sp = t.indexOf(" "), head = sp < 0 ? t : t.slice(0, sp), body = sp < 0 ? "" : t.slice(sp + 1);
+    try {
+      if (ses.onText(head, body)) { RadioLink.health(document.getElementById("health"), ses.chips()); return; }
+      if (head === "ft8") { ft8 = JSON.parse(body); ft8At = Date.now(); showFt8(); }
+      else if (head === "ft8r") addRow(JSON.parse(body));
+      else if (head === "state") {
+        state = Object.assign(state || {}, JSON.parse(body));
+        $("#where").text((state.freq / 1e6).toFixed(3) + " MHz" + (bands(state.freq) ? " · " + bands(state.freq) : ""));
+      }
+      else if (head === "err") status(body, true);
+    } catch (e) { status("Bad message: " + e, true); }
+  }
+  function onBinary(buf) {
+    if (buf.byteLength >= 8 && new DataView(buf).getUint16(0, true) === 0xFFFD) wfRow(buf);   /* not the panel's spectrum */
+  }
+  function wsUrl() {
+    if (secure) return "wss://" + location.host + "/ws/remote";
+    return "ws://" + location.hostname + ":" + conf.port + "/";
+  }
+  link = RadioLink.create({
+    url: function() {
+      return $.get("/api/remote").then(function(c) { conf = c; return c.enabled ? wsUrl() : null; }, function() { return null; });
+    },
+    ping: "ping",
+    onOpen: function() {
+      openedAt = Date.now();
+      $dec.children(":not(.thead)").remove(); $rx.children(":not(.thead)").remove(); lastSlot = {dec: "", rx: ""}; nDec = nRx = 0;
+      ses.onOpen(); send("screen 0"); send("panel 1"); send("ft8 wf 1"); status("Connected");
+    },
+    onText: onText,
+    onBinary: onBinary,
+    onClose: function() { status(conf && !conf.enabled ? "The remote is off on the radio (Remote page)" : "Not connected: trying again...", true); },
+    onStall: function(on) { if (on) status("The radio does not answer", true); else status("Connected"); },
+  });
+  ses = RadioSession.create({send: send, status: status, el: document.getElementById("ses"),
+    onChange: function() { RadioLink.health(document.getElementById("health"), ses.chips()); }});
+  setView("near");
+  fit();
+  link.connect();
+})();
+</script>
