@@ -25,6 +25,7 @@
 #include "gui_events.h"
 #include "app_frame.h"
 #include "channel_list.h"
+#include "remote_server.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -90,6 +91,7 @@ static void draw_live(void);
 static wefax_decoder_t *decoder;
 static uint32_t gen_seen;           /* Auto start generation already handled here */
 static bool     fax_on;             /* Auto: the GUI took the confirmed fax, rows are kept */
+static uint32_t fax_gen;            /* counts clear_fax: the panel starts a new picture */
 
 /* audio thread -> LVGL thread: the last finished row */
 static pthread_mutex_t row_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -367,6 +369,7 @@ static void clear_fax(void)
     pthread_mutex_unlock(&row_lock);
 
     store_n = store_head = 0;
+    fax_gen++;
 }
 
 /* ---- drawing ---- */
@@ -526,6 +529,37 @@ static bool png_write_fixed(FILE *fp, const uint8_t *img, unsigned w, unsigned h
     return true;
 }
 
+/* ---- what the panel sees (wefax_window_status) ---- */
+
+static pthread_mutex_t rstat_lock = PTHREAD_MUTEX_INITIALIZER;
+static wefax_status_t  rstat;
+
+/* LVGL thread: the state now, to the copy the panel thread reads */
+static void rstat_update(void)
+{
+    int32_t                 f  = cparam_i_get(cfg_fg_freq) + WEFAX_CENTER_HZ;
+    const freq_list_item_t *at = entry_at(freqs, freqs_n, f);
+
+    pthread_mutex_lock(&rstat_lock);
+    rstat.open      = decoder != NULL;
+    rstat.auto_mode = decoder && wefax_decoder_get_mode(decoder) != WEFAX_MODE_CONT;
+    rstat.fax_on    = decoder && (rstat.auto_mode ? fax_on : store_n > 0);
+    rstat.tx        = tx_running;
+    rstat.tx_pct    = tx_progress / 10;
+    rstat.rows      = store_n;
+    rstat.gen       = fax_gen;
+    rstat.freq      = f;
+    snprintf(rstat.station, sizeof(rstat.station), "%s", at ? at->name : "");
+    pthread_mutex_unlock(&rstat_lock);
+}
+
+void wefax_window_status(wefax_status_t *s)
+{
+    pthread_mutex_lock(&rstat_lock);
+    *s = rstat;
+    pthread_mutex_unlock(&rstat_lock);
+}
+
 static void *save_worker(void *arg)
 {
     save_job_t *job = arg;
@@ -548,6 +582,11 @@ static void *save_worker(void *arg)
 
     if (ok) {
         printf("WEFAX: saved %s (%u x %u)\n", job->path, WEFAX_WIDTH, job->rows);
+        const char *base = strrchr(job->path, '/');
+        pthread_mutex_lock(&rstat_lock);
+        snprintf(rstat.saved, sizeof(rstat.saved), "%s", base ? base + 1 : job->path);
+        rstat.saves++;
+        pthread_mutex_unlock(&rstat_lock);
     }
 
     free(job->img);
@@ -818,6 +857,7 @@ static void view_timer_cb(lv_timer_t *t)
 
     if (frame.head_left)
         header_update();
+    rstat_update();
     tx_poll();
     save_result();
     if (!canvas)
@@ -864,6 +904,7 @@ static void view_timer_cb(lv_timer_t *t)
         return;
 
     store_add(row);
+    remote_server_wefax_row(row, WEFAX_WIDTH, store_n);
 
     /* a fax longer than the kept rows: save it rather than lose its top */
     if (auto_mode() && fax_on && store_n >= STORE_ROWS) {
@@ -1059,6 +1100,7 @@ static void app_close(void)
     store_n = store_head = 0;
     free(store);
     store = NULL;
+    rstat_update();     /* decoder gone: closed */
 }
 
 static void app_key_cb(lv_event_t *e)
