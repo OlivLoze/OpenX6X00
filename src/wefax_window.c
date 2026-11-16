@@ -73,7 +73,7 @@ static void audio_cb(unsigned int n, float *samples);
 static void page_1_cb(button_data_t *data);
 static void page_2_cb(button_data_t *data);
 static void page_3_cb(button_data_t *data);
-static void page_4_cb(button_data_t *data);
+static void br_back_cb(button_data_t *data);
 static void close_cb(button_data_t *data);
 static void freq_cb(button_data_t *data);
 static void rx_mode_cb(button_data_t *data);
@@ -190,41 +190,47 @@ static time_t      join_t0;         /* the start of the chart joined */
 
 /* ---- buttons: F1 goes round the 4 pages ---- */
 
-static button_data_t btn_page_1  = {.type = BTN_TEXT, .label = "(FAX 1:4)", .press = page_2_cb};
-static button_data_t btn_freq    = {.type = BTN_TEXT, .label = "Freq.", .press = freq_cb};
-static button_data_t btn_rx_mode = {.type = BTN_TEXT_FN, .label_fn = rx_mode_label, .press = rx_mode_cb};
-static button_data_t btn_clear   = {.type = BTN_TEXT, .label = "Clear", .press = clear_cb};
+/* Page 1 what the app is for off-grid, 2 reception by hand, 3 the live picture's settings and TX power; the Fax
+ * Browser and the Bulletin have their own buttons while they show, F1 back to page 1 */
+static button_data_t btn_page_1  = {.type = BTN_TEXT, .label = "(FAX 1:3)", .press = page_2_cb};
+static button_data_t btn_plan    = {.type = BTN_TEXT_FN, .label_fn = plan_label, .press = plan_cb};
+static button_data_t btn_bulletin = {.type = BTN_TEXT, .label = "Bulletin", .press = bulletin_cb};
+static button_data_t btn_browser = {.type = BTN_TEXT, .label = "Fax\nBrowser", .press = browser_cb};
 static button_data_t btn_close   = {.type = BTN_TEXT, .label = "Close", .press = close_cb};
 
-static button_data_t btn_page_2 = {.type = BTN_TEXT, .label = "(FAX 2:4)", .press = page_3_cb};
+static button_data_t btn_page_2  = {.type = BTN_TEXT, .label = "(FAX 2:3)", .press = page_3_cb};
+static button_data_t btn_freq    = {.type = BTN_TEXT, .label = "Freq.", .press = freq_cb};
+static button_data_t btn_rx_mode = {.type = BTN_TEXT_FN, .label_fn = rx_mode_label, .press = rx_mode_cb};
+static button_data_t btn_view    = {.type = BTN_TEXT, .label = "View\nBig", .press = view_cb};
+static button_data_t btn_clear   = {.type = BTN_TEXT, .label = "Clear", .press = clear_cb};
+
+static button_data_t btn_page_3 = {.type = BTN_TEXT, .label = "(FAX 3:3)", .press = page_1_cb};
 static button_data_t btn_align  = {.type = BTN_TEXT_FN, .label_fn = align_label, .press = align_cb,
                                    .ctrl = CTRL_WEFAX_ALIGN, .encoder_allowed = true};
 static button_data_t btn_tilt   = {.type = BTN_TEXT_FN, .label_fn = tilt_label, .press = tilt_cb,
                                    .ctrl = CTRL_WEFAX_TILT, .encoder_allowed = true};
-static button_data_t btn_view   = {.type = BTN_TEXT, .label = "View\nBig", .press = view_cb};
 static button_data_t btn_save   = {.type = BTN_TEXT, .label = "Save", .press = save_cb};
 
-static button_data_t btn_page_3    = {.type = BTN_TEXT, .label = "(FAX 3:4)", .press = page_4_cb};
-static button_data_t btn_browser   = {.type = BTN_TEXT, .label = "Fax\nBrowser", .press = browser_cb};
-static button_data_t btn_fix_align = {.type = BTN_TEXT, .label = "Fix\nAlign", .press = fix_align_cb, .disabled = true};
-static button_data_t btn_fix_tilt  = {.type = BTN_TEXT, .label = "Fix\nTilt", .press = fix_tilt_cb, .disabled = true};
-static button_data_t btn_done      = {.type = BTN_TEXT, .label = "Done", .press = done_cb, .disabled = true};
+static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_plan, &btn_bulletin, &btn_browser, &btn_close}};
+static buttons_page_t page_2 = {.items = {&btn_page_2, &btn_freq, &btn_rx_mode, &btn_view, &btn_clear}};
+static buttons_page_t page_3 = {.items = {&btn_page_3, &btn_align, &btn_tilt, &btn_save, &btn_dig_pwr}};
 
-/* page 4: TX power */
-static button_data_t btn_page_4 = {.type = BTN_TEXT, .label = "(FAX 4:4)", .press = page_1_cb};
-static button_data_t btn_plan   = {.type = BTN_TEXT_FN, .label_fn = plan_label, .press = plan_cb};
-static button_data_t btn_bulletin = {.type = BTN_TEXT, .label = "Bulletin", .press = bulletin_cb};
+/* The Fax Browser: its list, a fax open */
+static button_data_t btn_br_page   = {.type = BTN_TEXT, .label = "(Browser)", .press = page_1_cb};
+static button_data_t btn_br_close  = {.type = BTN_TEXT, .label = "Close\nBrowser", .press = page_1_cb};
+static button_data_t btn_br_back   = {.type = BTN_TEXT, .label = "Back to\nList", .press = br_back_cb};
+static button_data_t btn_fix_align = {.type = BTN_TEXT, .label = "Fix\nAlign", .press = fix_align_cb};
+static button_data_t btn_fix_tilt  = {.type = BTN_TEXT, .label = "Fix\nTilt", .press = fix_tilt_cb};
+static button_data_t btn_done      = {.type = BTN_TEXT, .label = "Done", .press = done_cb};
 
-static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_freq, &btn_rx_mode, &btn_clear, &btn_close}};
-static buttons_page_t page_2 = {.items = {&btn_page_2, &btn_align, &btn_tilt, &btn_view, &btn_save}};
-static buttons_page_t page_3 = {.items = {&btn_page_3, &btn_browser, &btn_fix_align, &btn_fix_tilt, &btn_done}};
-static buttons_page_t page_4 = {.items = {&btn_page_4, &btn_plan, &btn_bulletin, &btn_dig_pwr}};
+static buttons_page_t page_br_list = {.items = {&btn_br_page, &btn_br_close, NULL, NULL, &btn_done}};
+static buttons_page_t page_br_pic  = {.items = {&btn_br_page, &btn_br_back, &btn_fix_align, &btn_fix_tilt, &btn_done}};
 
-/* While the Bulletin shows: its tiles, one of them large */
-static button_data_t btn_bul_page  = {.type = BTN_TEXT, .label = "(FAX 4:4)", .press = page_1_cb};
+/* The Bulletin: its tiles, one of them large */
+static button_data_t btn_bul_page  = {.type = BTN_TEXT, .label = "(Bulletin)", .press = page_1_cb};
 static button_data_t btn_bul_open  = {.type = BTN_TEXT_FN, .label_fn = bul_open_label, .press = bul_open_cb};
 static button_data_t btn_bul_back  = {.type = BTN_TEXT_FN, .label_fn = bul_back_label, .press = bul_back_cb};
-static button_data_t btn_bul_close = {.type = BTN_TEXT, .label = "Close\nBulletin", .press = page_4_cb};
+static button_data_t btn_bul_close = {.type = BTN_TEXT, .label = "Close\nBulletin", .press = page_1_cb};
 static buttons_page_t page_bul = {.items = {&btn_bul_page, &btn_plan, &btn_bul_open, &btn_bul_back, &btn_bul_close}};
 
 /* Frequency and mode come back when the app closes */
@@ -1390,6 +1396,17 @@ static void apply_view(void)
     }
 }
 
+/* The status line: what the buttons and the MFK do where the app is */
+#define HINT_RX     "Page 2: Freq., View   Page 3: Align, Tilt (MFK)"
+#define HINT_LIST   "MFK: choose a fax   press: open it"
+#define HINT_PIC    "Fix Align, Fix Tilt, then the MFK   Done saves"
+
+static void hint(const char *text)
+{
+    if (frame.status)
+        lv_label_set_text(frame.status, text);
+}
+
 static void focus_canvas(void)
 {
     lv_group_add_obj(keyboard_group, canvas);
@@ -1456,7 +1473,7 @@ static void app_open(lv_obj_t *parent)
     lv_obj_clear_flag(panel, LV_OBJ_FLAG_CLICKABLE);
 
     app_frame_create(&frame, dialog.obj);
-    lv_label_set_text(frame.status, "MFK: align   Freq.: stations   View: Small shows the waterfall");
+    hint(HINT_RX);
 
     /* the canvas takes the keys: the main screen's key handler is off while a dialog is open */
     lv_group_add_obj(keyboard_group, canvas);
@@ -1686,77 +1703,11 @@ static void browser_buttons(bool picture)
         buttons_refresh(&btn_done);
 }
 
-/* The list's rows: the Bulletin (a kind of chart a row, its newest copy), then every fax; each row a file (its index
- * in files) or -1 (a title, a kind not received yet) */
-#define TABLE_ROWS  (WEFAX_BULLETIN_MAX + 2 + BROWSER_FILES)
+/* The list's rows: every fax, newest first; each row a file (its index in files) or -1 (none saved) */
+#define TABLE_ROWS  (BROWSER_FILES + 1)
 
 static int      row_file[TABLE_ROWS];
 static unsigned rows_n;
-
-/* When a fax was saved, from its name (local time, as written); -1 if not one of ours */
-static time_t name_time(const char *name)
-{
-    struct tm tm = {0};
-
-    if (strncmp(name, "wefax-", 6) || sscanf(name + 6, "%4d%2d%2d-%2d%2d%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
-                                             &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 6)
-        return -1;
-    tm.tm_year -= 1900;
-    tm.tm_mon -= 1;
-    tm.tm_isdst = -1;
-    return mktime(&tm);
-}
-
-static void age_text(char *out, size_t n, long s)
-{
-    if (s < 3600)
-        snprintf(out, n, "%ld min", s < 60 ? 1 : s / 60);
-    else if (s < 48 * 3600)
-        snprintf(out, n, "%ld h %02ld", s / 3600, s % 3600 / 60);
-    else
-        snprintf(out, n, "%ld days", s / 86400);
-}
-
-/* A Bulletin row: the newest copy of the kind (when, how old, its mark) and when the next one comes; its file or -1 */
-static int bulletin_row(const wefax_bulletin_t *b, char *out, size_t n)
-{
-    time_t now  = time(NULL);
-    int    file = -1, sod = plan_sod(now), next = -1, wait = 0;
-
-    for (unsigned i = 0; i < files_n && file < 0; i++)      /* newest first */
-        if (strlen(files[i]) > 22 && files[i][21] == '-' && wefax_bulletin_has(b, files[i] + 22))
-            file = (int)i;
-    for (int i = 0; i < wefax_plan_count(); i++) {
-        const wefax_slot_t *s = wefax_plan_slot(i);
-        int                 d = (s->min * 60 - sod + 86400) % 86400;
-
-        if (wefax_bulletin_has(b, s->product) && (next < 0 || d < wait))
-            next = i, wait = d;
-    }
-
-    char have[64] = "none yet", when[40] = "";
-
-    if (file >= 0) {
-        const char *f = files[file], *q = strrchr(f, '-');
-        char        age[16];
-
-        age_text(age, sizeof(age), (long)(now - name_time(f)));
-        if (q && q[1] == 'q')
-            snprintf(have, sizeof(have), "%.2s:%.2s, %s ago, q%d", f + 15, f + 17, age, atoi(q + 2));
-        else
-            snprintf(have, sizeof(have), "%.2s:%.2s, %s ago", f + 15, f + 17, age);
-    }
-    if (next >= 0) {
-        const wefax_slot_t *s = wefax_plan_slot(next);
-
-        if (wait < 3600)
-            snprintf(when, sizeof(when), "   next %02d:%02d, in %d min", s->min / 60, s->min % 60, wait / 60);
-        else
-            snprintf(when, sizeof(when), "   next %02d:%02d", s->min / 60, s->min % 60);
-    }
-    snprintf(out, n, "%s:  %s%s", b->name, have, when);
-    return file;
-}
 
 static void table_row(const char *text, int file)
 {
@@ -1769,20 +1720,8 @@ static void table_fill(void)
     if (!table)
         return;
 
-    int  kinds = wefax_plan_bulletin_count();
-    char text[160];
-
     rows_n = 0;
-    lv_table_set_row_cnt(table, (kinds ? kinds + 2 : 0) + (files_n ? files_n : 1));
-    if (kinds) {
-        table_row("BULLETIN", -1);
-        for (int k = 0; k < kinds; k++) {
-            int f = bulletin_row(wefax_plan_bulletin(k), text, sizeof(text));
-
-            table_row(text, f);
-        }
-        table_row("ALL FAXES", -1);
-    }
+    lv_table_set_row_cnt(table, files_n ? files_n : 1);
     if (!files_n)
         table_row("No saved faxes", -1);
     for (unsigned i = 0; i < files_n; i++)
@@ -1855,6 +1794,8 @@ static bool picture_open(const char *name)
     }
     br_editing = true;
     browser_buttons(true);
+    buttons_load_page(&page_br_pic);
+    hint(HINT_PIC);
     printf("WEFAX: opened %s (%u x %u)\n", path, pic_w, pic_h);
     return true;
 }
@@ -1913,9 +1854,8 @@ static void browser_open(void)
 
     br_open = true;
     browser_buttons(false);
-    btn_browser.label = "Close\nBrowser";
-    if (btn_browser.disp_btn)
-        buttons_refresh(&btn_browser);
+    buttons_load_page(&page_br_list);
+    hint(HINT_LIST);
 }
 
 static void browser_close(void)
@@ -1928,13 +1868,11 @@ static void browser_close(void)
     files_free();
     browser_buttons(false);
     picture_free();
+    if (br_open)
+        hint(HINT_RX);
     br_open = false;
 
     btn_done.label = "Done";
-    buttons_disabled(&btn_done, true);
-    if (btn_done.disp_btn)
-        buttons_refresh(&btn_done);
-    btn_browser.label = "Fax\nBrowser";
 
     /* the live fax back over the picture, with the current layout */
     draw_live();
@@ -1951,6 +1889,8 @@ static void browser_close(void)
 static void browser_list(void)
 {
     browser_buttons(false);
+    buttons_load_page(&page_br_list);
+    hint(HINT_LIST);
     if (canvas) {
         lv_group_remove_obj(canvas);
         lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
@@ -2070,8 +2010,17 @@ static void page_3_cb(button_data_t *data)
 {
     (void)data;
     bulletin_hide();
+    browser_close();
     align_on = tilt_on = false;
     buttons_load_page(&page_3);
+}
+
+/* A fax open: back to the list, its corrections not saved */
+static void br_back_cb(button_data_t *data)
+{
+    (void)data;
+    if (br_open && br_editing)
+        browser_list();
 }
 
 /* The chart Auto Plan is taking, for its tile */
@@ -2097,7 +2046,7 @@ static void bulletin_zoom(const char *name)
     char file[96];
 
     snprintf(file, sizeof(file), "%s", name);      /* name goes with the Bulletin */
-    page_3_cb(NULL);
+    bulletin_hide();
     if (br_open)
         browser_close();
     browser_open();
@@ -2115,7 +2064,7 @@ static void bulletin_changed(void)
     buttons_refresh(&btn_bul_back);
 }
 
-/* Page 4 Bulletin: each kind of chart as a tile (wefax_bulletin.h), over the picture in the Big view */
+/* Bulletin: each kind of chart as a tile (wefax_bulletin.h), over the picture in the Big view */
 static void bulletin_cb(button_data_t *data)
 {
     (void)data;
@@ -2162,16 +2111,8 @@ static void bul_back_cb(button_data_t *data)
         wefax_bulletin_back();
         return;
     }
-    page_3_cb(NULL);
-    browser_open();
-}
-
-static void page_4_cb(button_data_t *data)
-{
-    (void)data;
     bulletin_hide();
-    browser_close();
-    buttons_load_page(&page_4);
+    browser_open();
 }
 
 static void close_cb(button_data_t *data)
@@ -2298,13 +2239,9 @@ static void save_cb(button_data_t *data)
 static void browser_cb(button_data_t *data)
 {
     (void)data;
-    if (!br_open) {
+    bulletin_hide();
+    if (!br_open)
         browser_open();
-        return;
-    }
-    browser_close();
-    if (btn_browser.disp_btn)
-        buttons_refresh(&btn_browser);
 }
 
 static void fix_align_cb(button_data_t *data)
@@ -2357,7 +2294,7 @@ static void fix_tilt_cb(button_data_t *data)
     }
 }
 
-/* F5 of page 3: Delete on the list; on a picture Done, or Save with a correction */
+/* F5 of the browser: Delete on the list; on a picture Done, or Save with a correction */
 static void done_cb(button_data_t *data)
 {
     (void)data;

@@ -3519,10 +3519,20 @@ WeFax buttons. WeFax opens in RX Auto: it waits for the start tone of a fax.
 
 | Page | Buttons |
 |---|---|
-| 1 | Freq., RX Auto / Cont, Clear, Close |
-| 2 | Align, Tilt, View, Save |
-| 3 | Fax Browser, Fix Align, Fix Tilt, Done |
-| 4 | Auto Plan, Bulletin, Power |
+| 1 | Auto Plan, Bulletin, Fax Browser, Close |
+| 2 | Freq., RX Auto / Cont, View, Clear |
+| 3 | Align, Tilt, Save, Power |
+
+The Fax Browser and the Bulletin have their own buttons while they show; F1
+(Browser, Bulletin) goes back to page 1, so does Close Browser or Close
+Bulletin. The status line under the picture says what the MFK does there.
+
+| Where | Buttons |
+|---|---|
+| Fax Browser, the list | Close Browser, Delete Fax |
+| Fax Browser, a fax open | Back to List, Fix Align, Fix Tilt, Done / Save Fax |
+| Bulletin, the tiles | Auto Plan, Open Chart, All Faxes, Close Bulletin |
+| Bulletin, one chart large | Auto Plan, Fix Chart, All Kinds, Close Bulletin |
 
 Fix Tilt on a saved fax first finds the tilt that straightens it (a station's
 line rate and the radio's never quite agree, each row comes a little earlier
@@ -3530,7 +3540,7 @@ or later and the chart leans): "Auto Tilt -185" a few seconds after the press,
 then the MFK touches it up by one, "Tilt -183", and Save Fax writes it. Fix
 Align moves the fax 8 px a step, its value shown the same way.
 
-Auto Plan (page 4) leaves WeFax on its own for the day: the radio follows a
+Auto Plan (page 1) leaves WeFax on its own for the day: the radio follows a
 plan of the DWD and Northwood charts (UTC), each on the frequency that comes
 in best at its hour (Northwood: 2618.5 kHz at night, 4610 from 06:00, 8040
 from 09:00, 4610 from 16:12; DWD: 7880 by day, 3855 at night), tuned 10 s
@@ -3557,7 +3567,7 @@ before the chart starts. The button shows the next slot, the header too.
   from noise, on noise it waits for the next start. Its top is missing and,
   its phasing missed, it can sit sideways (Fix Align in the browser); a full
   copy of the chart replaces it when one comes in.
-- Bulletin (page 4) shows each kind of chart (analysis, forecasts at 24 h,
+- Bulletin (page 1) shows each kind of chart (analysis, forecasts at 24 h,
   36-48 h and 3-5 days, sea and swell, wind, significant weather, rain and
   visibility, ice) as a tile, eight a page: its newest copy, how old it is
   (the dot green under 6 h, orange under 24 h, red older) and its mark; a kind
