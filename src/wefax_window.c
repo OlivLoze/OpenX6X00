@@ -11,6 +11,7 @@
 #include "board.h"
 #include "wefax_window.h"
 #include "wefax_bulletin.h"
+#include "wefax_viewer.h"
 #include "freq_list.h"
 #include "wefax/decoder.h"
 #include "wefax/encoder.h"
@@ -74,6 +75,7 @@ static void page_1_cb(button_data_t *data);
 static void page_2_cb(button_data_t *data);
 static void page_3_cb(button_data_t *data);
 static void br_back_cb(button_data_t *data);
+static void viewer_back_cb(button_data_t *data);
 static void close_cb(button_data_t *data);
 static void freq_cb(button_data_t *data);
 static void rx_mode_cb(button_data_t *data);
@@ -232,6 +234,13 @@ static button_data_t btn_bul_open  = {.type = BTN_TEXT_FN, .label_fn = bul_open_
 static button_data_t btn_bul_back  = {.type = BTN_TEXT_FN, .label_fn = bul_back_label, .press = bul_back_cb};
 static button_data_t btn_bul_close = {.type = BTN_TEXT, .label = "Close\nBulletin", .press = page_1_cb};
 static buttons_page_t page_bul = {.items = {&btn_bul_page, &btn_plan, &btn_bul_open, &btn_bul_back, &btn_bul_close}};
+
+/* The full screen viewer: any button goes back (they are under it, unseen) */
+static button_data_t btn_vw[5] = {
+    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}, {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb},
+    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}, {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb},
+    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}};
+static buttons_page_t page_viewer = {.items = {&btn_vw[0], &btn_vw[1], &btn_vw[2], &btn_vw[3], &btn_vw[4]}};
 
 /* Frequency and mode come back when the app closes */
 static dialog_t dialog = {
@@ -1529,6 +1538,7 @@ static void app_close(void)
 
     align_on = tilt_on = false;
     wefax_bulletin_close();
+    wefax_viewer_close();       /* after the Bulletin: its close gives back nothing then */
     browser_close();
     canvas          = NULL;
     viewport        = NULL;
@@ -2058,6 +2068,27 @@ static void bulletin_zoom(const char *name)
         }
 }
 
+/* The viewer gone: the Bulletin's buttons and keys back */
+static void viewer_closed(void)
+{
+    if (!wefax_bulletin_is_open())
+        return;
+    buttons_load_page(&page_bul);
+    wefax_bulletin_focus();
+}
+
+static void viewer_back_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_viewer_close();
+}
+
+static void bulletin_view(const char *name, const char *title)
+{
+    if (wefax_viewer_open(SAVE_DIR, name, title, viewer_closed))
+        buttons_load_page(&page_viewer);
+}
+
 static void bulletin_changed(void)
 {
     buttons_refresh(&btn_bul_open);
@@ -2081,7 +2112,8 @@ static void bulletin_cb(button_data_t *data)
     wefax_bulletin_cbs_t cbs = {.live       = bulletin_live,
                                 .open_file  = bulletin_zoom,
                                 .other_keys = app_key_cb,
-                                .changed    = bulletin_changed};
+                                .changed    = bulletin_changed,
+                                .view_file  = bulletin_view};
 
     wefax_bulletin_open(dialog.obj, &cbs);
     buttons_load_page(&page_bul);
@@ -2095,7 +2127,10 @@ static const char *bul_open_label(void)
 static void bul_open_cb(button_data_t *data)
 {
     (void)data;
-    wefax_bulletin_enter();
+    if (wefax_bulletin_one())
+        wefax_bulletin_fix();
+    else
+        wefax_bulletin_enter();
 }
 
 static const char *bul_back_label(void)

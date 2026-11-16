@@ -448,7 +448,7 @@ static void big_show(void)
         lv_label_set_text_fmt(big_mark, "mark q%d", q);
     else
         lv_label_set_text(big_mark, "");
-    lv_label_set_text(big_hint, "MFK: kind   press: fix align, tilt");
+    lv_label_set_text(big_hint, "MFK: kind   press: full screen");
 }
 
 static void show(void)
@@ -679,12 +679,47 @@ void wefax_bulletin_enter(void)
         show();
         if (cb.changed)
             cb.changed();
-    } else if (kinds[sel].file[0] && cb.open_file) {
+        return;
+    }
+
+    kind_t *c = &kinds[sel];
+
+    if (c->file[0] && cb.view_file) {
+        const wefax_slot_t *s = slot_of(c->file);
+        time_t              t = name_time(c->file);
+        struct tm           tm;
+        char                name[96], title[96], src[40] = "";
+        int                 q = mark_of(c->file);
+
+        gmtime_r(&t, &tm);
+        if (s)
+            snprintf(src, sizeof(src), "  %s %.1f kHz", s->station, s->freq_hz / 1000.0);
+        snprintf(title, sizeof(title), "%s%s  %02d:%02d UTC%s", wefax_plan_bulletin(sel)->name, src, tm.tm_hour,
+                 tm.tm_min, q >= 0 ? "" : "");
+        if (q >= 0)
+            snprintf(title + strlen(title), sizeof(title) - strlen(title), "  q%d", q);
+        snprintf(name, sizeof(name), "%s", c->file);
+        cb.view_file(name, title);
+    }
+}
+
+void wefax_bulletin_fix(void)
+{
+    if (root && one && kinds[sel].file[0] && cb.open_file) {
         char name[96];
 
         snprintf(name, sizeof(name), "%s", kinds[sel].file);
         cb.open_file(name);     /* closes the Bulletin */
     }
+}
+
+void wefax_bulletin_focus(void)
+{
+    if (!root)
+        return;
+    lv_group_add_obj(keyboard_group, root);
+    lv_group_focus_obj(root);
+    lv_group_set_editing(keyboard_group, true);
 }
 
 void wefax_bulletin_back(void)

@@ -3575,9 +3575,12 @@ before the chart starts. The button shows the next slot, the header too.
   in draws in its tile ("receiving 40 %"). The MFK picks a tile, its press
   (or Open Chart) shows it large: the whole chart, its station and frequency,
   when it was taken, its mark and the next one; the MFK goes through the
-  kinds there, All Kinds goes back to the tiles. Fix Chart (or the press)
-  opens it in the Fax Browser for Fix Align and Fix Tilt; All Faxes is the
-  Browser's list of every fax. The tiles come from a small preview of each
+  kinds there, All Kinds goes back to the tiles. A press there shows the
+  chart over the whole screen: the next press goes x2, then 1:1 (the
+  pressure figures readable), then whole again; the MFK moves up and down,
+  VOL left and right, a small map in the corner shows where; any button goes
+  back. Fix Chart opens it in the Fax Browser for Fix Align and Fix Tilt;
+  All Faxes is the Browser's list of every fax. The tiles come from a small preview of each
   chart in `/mnt/wefax/thumbs`, made when it is saved; a chart saved before
   gets one the first time it is shown ("preparing" a few seconds). The web
   WeFax page shows the same Bulletin.
