@@ -21,7 +21,8 @@ extern dialog_t *dialog_wefax;
 bool dialog_wefax_is_active(void);
 
 /* What the panel asks: the buttons' own handlers. LVGL thread; false when the app is not open */
-typedef enum { WEFAX_RC_AUTO, WEFAX_RC_CONT, WEFAX_RC_SAVE, WEFAX_RC_CLEAR } wefax_rc_t;
+/* PLAN / UNPLAN: Auto Plan on and off */
+typedef enum { WEFAX_RC_AUTO, WEFAX_RC_CONT, WEFAX_RC_SAVE, WEFAX_RC_CLEAR, WEFAX_RC_PLAN, WEFAX_RC_UNPLAN } wefax_rc_t;
 
 bool wefax_window_remote(wefax_rc_t what);
 
@@ -38,6 +39,8 @@ typedef struct {
     char     station[40];   /* its name in the app's list, "" for none */
     char     saved[48];     /* the last picture written to /mnt/wefax, file name */
     uint32_t saves;         /* pictures written since the start */
+    bool     plan;          /* Auto Plan follows the day's slots */
+    char     plan_next[48]; /* its next slot: "HH:MM station kHz" */
 } wefax_status_t;
 
 void wefax_window_status(wefax_status_t *s);

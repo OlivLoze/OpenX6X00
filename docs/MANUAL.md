@@ -3522,7 +3522,27 @@ WeFax buttons. WeFax opens in RX Auto: it waits for the start tone of a fax.
 | 1 | Freq., RX Auto / Cont, Clear, Close |
 | 2 | Align, Tilt, View, Save |
 | 3 | Fax Browser, Fix Align, Fix Tilt, Done |
-| 4 | Power |
+| 4 | Auto Plan, Power |
+
+Auto Plan (page 4) leaves WeFax on its own for the day: the radio follows a
+plan of the DWD and Northwood charts (UTC), each on the frequency that comes
+in best at its hour (Northwood: 2618.5 kHz at night, 4610 from 06:00, 8040
+from 09:00, 4610 from 16:12; DWD: 7880 by day, 3855 at night), tuned 10 s
+before the chart starts. The button shows the next slot, the header too.
+
+- A chart coming in is never cut by the next slot; a filler slot gives way
+  to a slot of the plan.
+- Each fax gets a quality mark (0-100: stripes, noise, lost sync, fading),
+  in its name with the chart: `wefax-20261116-062315-NW-analyse-surface-00Z-q91.png`.
+- A chart is sent several times a day: of one chart (the same name within
+  16 h) only the best copy is kept, a worse one is not written. Charts whose
+  name holds `inconnu` are all kept.
+- Tuning by hand (Freq., the knob, the web page) stops Auto Plan; closing the
+  app too.
+- The plan is in the firmware (tools/wefax_plan/plan.json, from a 48 h watch in
+  November 2026); a `/mnt/wefax/plan.json` of the same form replaces it.
+- The web WeFax page has the same Auto Plan button (remote `wefax plan` and
+  `wefax unplan`).
 
 The VOL knob works as on the main screen: turned it changes what it is on
 (volume, squelch, RF gain, the filter edges...), a press of VOL switches

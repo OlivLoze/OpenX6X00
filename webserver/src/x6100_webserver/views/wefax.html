@@ -36,12 +36,13 @@ app's buttons. Receive only: nothing here transmits.</p>
     <div class="dp-x"><span class="wf-state"><span id="phase" class="off">closed</span></span></div></div>
   <div class="dp-body">
     <div class="wf-state" style="margin-bottom:12px">
-      <span>Signal <b id="sig">--</b></span><span>Rows <b id="rows">0</b></span><span>Saved <b id="saves">-</b></span>
+      <span>Signal <b id="sig">--</b></span><span>Rows <b id="rows">0</b></span><span>Saved <b id="saves">-</b></span><span>Plan <b id="plan">off</b></span>
     </div>
     <div class="wf-pic" id="pic"><div class="empty">Nothing yet: open the app, pick a station, and the chart shows here as it comes in.</div></div>
     <div class="actions">
       <button type="button" class="primary" id="b-open">Open the app</button>
       <span class="seg" id="b-mode"><button type="button" data-m="auto" aria-pressed="false">RX Auto</button><button type="button" data-m="cont" aria-pressed="false">RX Cont</button></span>
+      <span class="seg"><button type="button" id="b-plan" aria-pressed="false" title="The radio follows the day's slots (Northwood, DWD) on the best frequency of the hour and keeps the best copy of each chart; tuning by hand stops it">Auto Plan</button></span>
       <button type="button" id="b-save">Save now</button>
       <button type="button" id="b-clear">Clear</button>
       <span class="status" id="st"></span>
@@ -153,6 +154,8 @@ app's buttons. Receive only: nothing here transmits.</p>
     $("#b-open").text(f.open ? "Close the app" : "Open the app").toggleClass("primary", !f.open);
     $("#b-mode button").each(function() { this.setAttribute("aria-pressed", String(f.open && (this.dataset.m === "auto") === !!f.auto)); this.disabled = !f.open; });
     $("#b-save, #b-clear").prop("disabled", !f.open);
+    $("#b-plan").prop("disabled", !f.open).attr("aria-pressed", String(f.open && !!f.plan));
+    document.getElementById("plan").textContent = f.open && f.plan ? (f.next ? "next " + f.next + " kHz" : "on") : "off";
     if (f.gen !== picGen) { picGen = f.gen; if (f.fax) newPicture(); }
     if (f.saves !== lastSaves) { if (lastSaves >= 0 || !canvas) loadLast(); lastSaves = f.saves; if (!f.fax) showSaved(f.saved); }
     markStation();
@@ -215,6 +218,7 @@ app's buttons. Receive only: nothing here transmits.</p>
   $("#b-open").on("click", function() { act(fax && fax.open ? "wefax close" : "wefax open"); });
   $("#b-mode").on("click", "button", function() { act("wefax " + this.dataset.m); });
   $("#b-save").on("click", function() { if (act("wefax save")) status("Saving on the radio..."); });
+  $("#b-plan").on("click", function() { act(fax && fax.plan ? "wefax unplan" : "wefax plan"); });
   $("#b-clear").on("click", function() { if (confirm("Clear the chart on the radio? What was not saved is lost.")) act("wefax clear"); });
 
   function wsUrl() {

@@ -63,7 +63,7 @@
  *  "js8 txfreq HZ", "js8 select CALL", "js8 send TEXT" work the JS8 app, whose messages go out as "js8r {...}" (the
  *  last 64 to a page that opens later; one still coming in keeps its id as it grows) and its state as "js8 {...}",
  *  "js8 wf 1" its waterfall, "wefax
- *  open|close|auto|cont|save|clear" the WeFax app (the state's "app" names the one open), each SWR scan
+ *  open|close|auto|cont|save|clear|plan|unplan" the WeFax app (the state's "app" names the one open), each SWR scan
  *  sweep goes out as "swr {name, lo, hi, w, v: [...]}" (remote_server_swr), "pos LAT
  *  LON [ACC]" gives the radio the phone's position (degrees, the accuracy in metres; Field Ops uses
  *  it when no GPS is plugged in, operate without control: it touches nothing of the RF side), "log
@@ -1473,6 +1473,8 @@ static void wefax_status_line(char *buf, size_t n, const wefax_status_t *s) {
     k += json_str(buf + k, n - k, s->station);
     k += snprintf(buf + k, n - k, ",\"saved\":");
     k += json_str(buf + k, n - k, s->saved);
+    k += snprintf(buf + k, n - k, ",\"plan\":%d,\"next\":", s->plan);
+    k += json_str(buf + k, n - k, s->plan_next);
     snprintf(buf + k, n - k, "}");
 }
 
@@ -1762,13 +1764,15 @@ static bool app_ft8_cmd(const char *what, const char *arg) {
     return true;
 }
 
-/* "wefax open|close|auto|cont|save|clear": Auto waits for the start tone and saves at the stop tone, Cont takes rows
- * at once, Save writes the rows kept to /mnt/wefax and starts over, Clear drops them */
+/* "wefax open|close|auto|cont|save|clear|plan|unplan": Auto waits for the start tone and saves at the stop tone, Cont
+ * takes rows at once, Save writes the rows kept to /mnt/wefax and starts over, Clear drops them, Plan follows the
+ * day's slots (Auto Plan) */
 static bool app_wefax_cmd(const char *what) {
     static const struct {
         const char *name;
         wefax_rc_t  rc;
-    } rcs[] = {{"auto", WEFAX_RC_AUTO}, {"cont", WEFAX_RC_CONT}, {"save", WEFAX_RC_SAVE}, {"clear", WEFAX_RC_CLEAR}};
+    } rcs[] = {{"auto", WEFAX_RC_AUTO},   {"cont", WEFAX_RC_CONT}, {"save", WEFAX_RC_SAVE},
+               {"clear", WEFAX_RC_CLEAR}, {"plan", WEFAX_RC_PLAN}, {"unplan", WEFAX_RC_UNPLAN}};
     acmd_t a = {.id = A_WEFAX};
 
     if (!strcasecmp(what, "open")) {
