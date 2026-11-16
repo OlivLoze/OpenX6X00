@@ -196,6 +196,14 @@ static void beacon_row(void) {
             msg_update_text_fmt("Clock %+.3f s from %s", -st.ahead, clock_beacons[st.beacon].name);
         }
     }
+    /* RWM keys no marker from :00 to :09 and :30 to :39 (carrier, silence, its call) */
+    int min = (int)(time(NULL) / 60 % 60);
+
+    if (!st.result && !strncmp(clock_beacons[st.beacon].name, "RWM", 3) && min % 30 < 10) {
+        lv_label_set_text_fmt(values[R_BEACON], "%s: no markers until :%02d", clock_beacons[st.beacon].name,
+                              min < 30 ? 10 : 40);
+        return;
+    }
     if (!st.markers) {
         lv_label_set_text_fmt(values[R_BEACON], "%s: listening", clock_beacons[st.beacon].name);
         return;

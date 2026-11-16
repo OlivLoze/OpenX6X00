@@ -4831,9 +4831,11 @@ A time station sends a marker on each minute; heard, the radio knows when
 the minute starts to a few milliseconds:
 
 - RWM (Moscow, 4996, 9996 and 14996 kHz): keys its carrier 500 ms on each
-  minute, from minute 10 to 30 and from 40 to 60 of each hour (in the other
-  minutes it sends a plain carrier or its callsign). Heard well in Europe:
-  9996 kHz by day, 4996 kHz at night.
+  minute from :10 to :29 and from :40 to :59 of each hour, among its second
+  pulses (one or ten a second). From :00 to :09 and :30 to :39 it sends a
+  plain carrier, a silence and its callsign: Time station then shows "no
+  markers until :10" (or :40). Heard well in Europe: 9996 kHz by day, 4996
+  kHz at night.
 - WWV (Colorado, 5, 10 and 15 MHz): a 1000 Hz tone 800 ms on each minute.
   From Europe at times, on 10 or 15 MHz.
 
