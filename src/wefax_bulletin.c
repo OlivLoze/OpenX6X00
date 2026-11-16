@@ -37,6 +37,7 @@
 #define DOT         10
 
 #define AGE_FRESH_S (6 * 3600)
+#define MARK_FAIR   30          /* a copy under this mark (noise, a fade) shows only when there is no better one */
 #define AGE_OLD_S   (24 * 3600)
 
 typedef struct {
@@ -150,10 +151,12 @@ static void work_add(const char *name)
     }
 }
 
-/* The newest copy of each kind: the names sort by time */
+static int mark_of(const char *name);
+
+/* Each kind's copy: the newest of fair mark, else the newest; the names sort by time */
 static void scan(void)
 {
-    char newest[WEFAX_BULLETIN_MAX][96] = {{0}};
+    char newest[WEFAX_BULLETIN_MAX][96] = {{0}}, fair[WEFAX_BULLETIN_MAX][96] = {{0}};
     DIR *dir = opendir(SAVE_DIR);
 
     if (dir) {
@@ -166,16 +169,21 @@ static void scan(void)
             if (len < 27 || len >= sizeof(newest[0]) || strncmp(n, "wefax-", 6) || n[21] != '-' ||
                 strcmp(n + len - 4, ".png"))
                 continue;
-            for (int k = 0; k < kinds_n; k++)
-                if (wefax_bulletin_has(wefax_plan_bulletin(k), n + 22) && strcmp(n, newest[k]) > 0)
+            for (int k = 0; k < kinds_n; k++) {
+                if (!wefax_bulletin_has(wefax_plan_bulletin(k), n + 22))
+                    continue;
+                if (strcmp(n, newest[k]) > 0)
                     snprintf(newest[k], sizeof(newest[k]), "%s", n);
+                if (mark_of(n) >= MARK_FAIR && strcmp(n, fair[k]) > 0)
+                    snprintf(fair[k], sizeof(fair[k]), "%s", n);
+            }
         }
         closedir(dir);
     }
     for (int k = 0; k < kinds_n; k++) {
         kind_t *c = &kinds[k];
 
-        snprintf(c->file, sizeof(c->file), "%s", newest[k]);
+        snprintf(c->file, sizeof(c->file), "%s", fair[k][0] ? fair[k] : newest[k]);
         if (c->prv && strcmp(c->prv_of, c->file)) {
             free(c->prv);
             c->prv = NULL;

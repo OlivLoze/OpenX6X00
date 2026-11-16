@@ -459,6 +459,7 @@ def wefax_page():
     return bottle.template('wefax')
 
 
+MARK_FAIR = 30      # a copy under this mark shows only when there is no better one (src/wefax_bulletin.c)
 WEFAX_NAME = re.compile(r'^wefax-(\d{8}-\d{6})-(.+?)(?:-q(\d+))?\.png$')
 
 
@@ -491,14 +492,15 @@ def wefax_bulletin():
     for kind in plan.get("bulletin", []):
         match = tuple(kind.get("match", []))
         item = {"name": kind.get("name", "")}
-        for name, m in faxes:
-            if m.group(2).startswith(match):
-                try:        # the file's own date: the name is in the radio's local time
-                    t = os.path.getmtime(os.path.join(settings.FILEBROWSER_PATH, "wefax", name))
-                except OSError:
-                    continue
-                item.update(file=name, product=m.group(2), age=int(now - t), q=int(m.group(3)) if m.group(3) else None)
-                break
+        # the newest copy of fair mark (MARK_FAIR, as the radio's Bulletin), else the newest
+        mine = [(name, m) for name, m in faxes if m.group(2).startswith(match)]
+        fair = [(name, m) for name, m in mine if m.group(3) and int(m.group(3)) >= MARK_FAIR]
+        for name, m in (fair or mine)[:1]:
+            try:        # the file's own date
+                t = os.path.getmtime(os.path.join(settings.FILEBROWSER_PATH, "wefax", name))
+            except OSError:
+                continue
+            item.update(file=name, product=m.group(2), age=int(now - t), q=int(m.group(3)) if m.group(3) else None)
         waits = []
         for slot in plan.get("slots", []):
             try:
