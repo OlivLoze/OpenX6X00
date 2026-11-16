@@ -1,13 +1,13 @@
 from datetime import datetime
 try:
+    import gzip
     import zlib
 except ImportError:   # images built before python3-zlib was selected
-    zlib = None
+    gzip = zlib = None
 import base64
 import binascii
 import csv
 import fcntl
-import gzip
 import hashlib
 import io
 import ipaddress
@@ -538,7 +538,7 @@ CTY_SHORT = {"Fed. Rep. of Germany": "Germany", "United States": "USA", "Europea
              "Republic of South Sudan": "South Sudan", "Antigua & Barbuda": "Antigua", "Trinidad & Tobago": "Trinidad",
              "Turks & Caicos Islands": "Turks & Caicos", "St. Kitts & Nevis": "St. Kitts",
              "Sov Mil Order of Malta": "SMOM", "UK Base Areas on Cyprus": "UK Cyprus"}   # as src/dxcc.c shows them
-_cty = {"key": None, "gz": None}
+_cty = {"key": None, "json": None, "gz": None}
 
 
 def cty_table(text):
@@ -575,14 +575,15 @@ def dxcc_table():
     key = (path, os.path.getmtime(path))
     if _cty["key"] != key:
         with open(path, encoding="latin-1") as f:
-            _cty["gz"] = gzip.compress(json.dumps(cty_table(f.read()), separators=(",", ":")).encode())
+            _cty["json"] = json.dumps(cty_table(f.read()), separators=(",", ":")).encode()
+        _cty["gz"] = gzip.compress(_cty["json"]) if gzip else None
         _cty["key"] = key
     bottle.response.content_type = "application/json"
     bottle.response.set_header("Cache-Control", "max-age=3600")
-    if "gzip" in bottle.request.headers.get("Accept-Encoding", ""):
+    if _cty["gz"] and "gzip" in bottle.request.headers.get("Accept-Encoding", ""):
         bottle.response.set_header("Content-Encoding", "gzip")
         return _cty["gz"]
-    return gzip.decompress(_cty["gz"])
+    return _cty["json"]
 
 
 # The Panel page (views/panel.html): the radio worked natively over the same WebSocket
