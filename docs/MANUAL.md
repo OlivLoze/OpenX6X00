@@ -3350,9 +3350,9 @@ message for you, one of yours to them, a heartbeat of yours they heard),
 newest first, their flag, last words and unread count; on the right the one
 chosen, theirs on the left, yours on the right in blue, their country,
 locator, distance and the reports on top. The MFK goes from one station to
-the next, its press opens Query > for it. Buttons: Board (back), Heartbeat,
-Reply, Query > and Write... (words for them; MSG first puts them in their
-Inbox). The lane and the TX line stay above it.
+the next, its press opens Query > for it. Buttons: < Board, Reply, Query >,
+Write... (words for them; MSG first puts them in their Inbox) and Close Chat;
+F1, F5 or ESC go back to the board. The lane and the TX line stay above it.
 
 Heartbeat (page 1) sends one at once; it reads "Heartbeat auto 10 min"
 while the automatic ones go out. Held, it opens Settings on HB to turn them
