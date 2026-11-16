@@ -20,8 +20,9 @@ extern "C" {
 #define WEFAX_TILT_UNIT_W   750
 #define WEFAX_TILT_MAX      400
 
-/* The tilt that straightens img (w x h grey, as received), -WEFAX_TILT_MAX..WEFAX_TILT_MAX */
-int wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h);
+/* The tilt that straightens img (w x h grey, as received), -WEFAX_TILT_MAX..WEFAX_TILT_MAX. False when there is
+ * none to trust: no memory, too small a picture, or the best at the end of the range (nothing lines up) */
+bool wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h, int *tilt);
 
 /* A station's tilt (the median of its last charts); false when none is known */
 bool wefax_station_tilt(const char *station, int *tilt);

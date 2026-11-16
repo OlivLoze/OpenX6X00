@@ -75,6 +75,8 @@ static pthread_mutex_t work_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool            work_busy;
 static char            work_files[WEFAX_BULLETIN_MAX][96];
 static int             work_n;
+static char            work_failed[WEFAX_BULLETIN_MAX][96];    /* no preview to be had: not tried again */
+static int             work_failed_n;
 
 static void key_cb(lv_event_t *e);
 static void click_cb(lv_event_t *e);
@@ -95,13 +97,32 @@ static void *work_thread(void *arg)
         }
         snprintf(name, sizeof(name), "%s", work_files[--work_n]);
         pthread_mutex_unlock(&work_lock);
-        if (wefax_preview_make(SAVE_DIR, name))
+        if (wefax_preview_make(SAVE_DIR, name)) {
             printf("WEFAX: preview of %s made\n", name);
+        } else {
+            pthread_mutex_lock(&work_lock);
+            snprintf(work_failed[work_failed_n % WEFAX_BULLETIN_MAX], sizeof(work_failed[0]), "%s", name);
+            work_failed_n++;
+            pthread_mutex_unlock(&work_lock);
+        }
     }
+}
+
+static bool work_failed_has(const char *name)
+{
+    pthread_mutex_lock(&work_lock);
+    int  n   = work_failed_n < WEFAX_BULLETIN_MAX ? work_failed_n : WEFAX_BULLETIN_MAX;
+    bool has = false;
+    for (int i = 0; i < n && !has; i++)
+        has = !strcmp(work_failed[i], name);
+    pthread_mutex_unlock(&work_lock);
+    return has;
 }
 
 static void work_add(const char *name)
 {
+    if (work_failed_has(name))
+        return;
     pthread_mutex_lock(&work_lock);
     for (int i = 0; i < work_n; i++)
         if (!strcmp(work_files[i], name)) {
@@ -162,7 +183,7 @@ static void scan(void)
         if (c->file[0] && !c->prv) {
             c->prv = wefax_preview_load(SAVE_DIR, c->file, &c->pw, &c->ph);
             snprintf(c->prv_of, sizeof(c->prv_of), "%s", c->file);
-            c->prv_missing = !c->prv;
+            c->prv_missing = !c->prv && !work_failed_has(c->file);   /* a failed one: not read every second */
             if (c->prv_missing)
                 work_add(c->file);
         }
@@ -322,7 +343,7 @@ static void tile_show(int t)
     tile_t *tl = &tiles[t];
     int     k  = (sel / TILES) * TILES + t;
 
-    if (k >= kinds_n) {
+    if (k >= kinds_n || !wefax_plan_bulletin(k) || !tl->buf) {
         lv_obj_add_flag(tl->box, LV_OBJ_FLAG_HIDDEN);
         return;
     }
@@ -352,10 +373,10 @@ static void tile_show(int t)
     if (!c->file[0] || !c->prv) {
         lv_canvas_fill_bg(tl->canvas, TC(panel), LV_OPA_COVER);
         lv_obj_clear_flag(tl->empty, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(tl->empty, c->file[0] ? "..." : next[0] ? next : "not in the plan");
+        lv_label_set_text(tl->empty, c->file[0] ? (c->prv_missing ? "..." : "no preview") : next[0] ? next : "not in the plan");
         lv_obj_add_flag(tl->dot, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_x(tl->info, 1);
-        lv_label_set_text(tl->info, c->file[0] ? "preparing" : "none yet");
+        lv_label_set_text(tl->info, c->file[0] ? (c->prv_missing ? "preparing" : "a copy, unreadable") : "none yet");
         lv_obj_set_style_text_color(tl->info, TC(text_mute), LV_PART_MAIN);
         return;
     }
@@ -380,6 +401,8 @@ static void tile_show(int t)
 
 static void big_show(void)
 {
+    if (sel >= kinds_n || !wefax_plan_bulletin(sel) || !big_buf)
+        return;
     kind_t  *c = &kinds[sel];
     unsigned pw, ph, upto;
     int      permille;
@@ -455,6 +478,14 @@ static void show(void)
 {
     if (!root)
         return;
+    int n = wefax_plan_bulletin_count();   /* Auto Plan may load the plan again meanwhile */
+    if (n < kinds_n) {
+        kinds_n = n;
+        if (sel >= kinds_n)
+            sel = kinds_n ? kinds_n - 1 : 0;
+        if (!kinds_n)
+            one = false;
+    }
     if (one) {
         lv_obj_clear_flag(big, LV_OBJ_FLAG_HIDDEN);
         for (int t = 0; t < TILES; t++)
@@ -540,9 +571,11 @@ static void tiles_create(int w, int h)
 
         tl->buf    = malloc(sizeof(lv_color_t) * TILE_W * tile_h);
         tl->canvas = lv_canvas_create(tl->box);
-        lv_canvas_set_buffer(tl->canvas, tl->buf, TILE_W, tile_h, LV_IMG_CF_TRUE_COLOR);
+        if (tl->buf) {
+            lv_canvas_set_buffer(tl->canvas, tl->buf, TILE_W, tile_h, LV_IMG_CF_TRUE_COLOR);
+            lv_canvas_fill_bg(tl->canvas, TC(panel), LV_OPA_COVER);
+        }
         lv_obj_set_pos(tl->canvas, 1, 1);
-        lv_canvas_fill_bg(tl->canvas, TC(panel), LV_OPA_COVER);
 
         tl->empty = lv_label_create(tl->box);
         lv_obj_set_style_text_font(tl->empty, &sony_20, LV_PART_MAIN);
@@ -568,9 +601,11 @@ static void big_create(int w, int h)
     big_w = big_h * WEFAX_PREVIEW_W / WEFAX_PREVIEW_H;
     big_buf    = malloc(sizeof(lv_color_t) * big_w * big_h);
     big_canvas = lv_canvas_create(big);
-    lv_canvas_set_buffer(big_canvas, big_buf, big_w, big_h, LV_IMG_CF_TRUE_COLOR);
+    if (big_buf) {
+        lv_canvas_set_buffer(big_canvas, big_buf, big_w, big_h, LV_IMG_CF_TRUE_COLOR);
+        lv_canvas_fill_bg(big_canvas, TC(panel), LV_OPA_COVER);
+    }
     lv_obj_set_pos(big_canvas, 8, (h - big_h) / 2);
-    lv_canvas_fill_bg(big_canvas, TC(panel), LV_OPA_COVER);
 
     big_empty = lv_label_create(big);
     lv_obj_set_style_text_font(big_empty, &sony_24, LV_PART_MAIN);
@@ -672,7 +707,7 @@ bool wefax_bulletin_one(void)
 
 void wefax_bulletin_enter(void)
 {
-    if (!root || !kinds_n)
+    if (!root || !kinds_n || sel >= wefax_plan_bulletin_count())
         return;
     if (!one) {
         one = true;
@@ -694,8 +729,8 @@ void wefax_bulletin_enter(void)
         gmtime_r(&t, &tm);
         if (s)
             snprintf(src, sizeof(src), "  %s %.1f kHz", s->station, s->freq_hz / 1000.0);
-        snprintf(title, sizeof(title), "%s%s  %02d:%02d UTC%s", wefax_plan_bulletin(sel)->name, src, tm.tm_hour,
-                 tm.tm_min, q >= 0 ? "" : "");
+        snprintf(title, sizeof(title), "%s%s  %02d:%02d UTC", wefax_plan_bulletin(sel)->name, src, tm.tm_hour,
+                 tm.tm_min);
         if (q >= 0)
             snprintf(title + strlen(title), sizeof(title) - strlen(title), "  q%d", q);
         snprintf(name, sizeof(name), "%s", c->file);

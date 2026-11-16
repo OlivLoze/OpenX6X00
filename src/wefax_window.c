@@ -157,6 +157,7 @@ static int       br_align, br_tilt;
 static uint8_t  *pic;
 static unsigned  pic_w, pic_h;
 static char      pic_path[256];
+static unsigned  pic_gen;           /* counts the pictures opened: Auto Tilt's result is for one */
 
 /* TX (web remote): a worker plays the picture through tx_player, no RX meanwhile */
 static pthread_t     tx_thread;
@@ -567,6 +568,25 @@ static void draw_picture(void)
 /* ---- PNG ---- */
 
 /* Grey PNG of img (w x h) with Align and Tilt applied as on screen */
+/* A chart's preview made by a thread of its own: the PNG read back takes the radio a second or two */
+static void *preview_worker(void *arg)
+{
+    wefax_preview_make(SAVE_DIR, arg);
+    free(arg);
+    return NULL;
+}
+
+static void preview_later(const char *name)
+{
+    char     *copy = strdup(name);
+    pthread_t th;
+
+    if (copy && pthread_create(&th, NULL, preview_worker, copy) == 0)
+        pthread_detach(th);
+    else
+        free(copy);
+}
+
 static bool png_write_fixed(FILE *fp, const uint8_t *img, unsigned w, unsigned h, int align, int tilt)
 {
     png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -705,9 +725,8 @@ static void *save_worker(void *arg)
     int         best = same ? copies(job->product, job->when, NULL, false) : -1;
 
     /* Auto Plan's chart straightened, its station's tilt learned: a fair copy only, noise has no lines to go by */
-    if (job->product[0] && q >= 60 && best < q) {
-        int t = wefax_auto_tilt(job->img, WEFAX_WIDTH, job->rows);
-
+    int t;
+    if (job->product[0] && q >= 60 && best < q && wefax_auto_tilt(job->img, WEFAX_WIDTH, job->rows, &t)) {
         if (t != job->tilt)
             printf("WEFAX TILT: %s straightened, tilt %+d (was %+d)\n", job->product, t, job->tilt);
         job->tilt = t;
@@ -715,6 +734,8 @@ static void *save_worker(void *arg)
     }
 
     snprintf(path, sizeof(path), "%s%s%s-q%d.png", job->path, job->product[0] ? "-" : "", job->product, q);
+    char tmp[sizeof(path) + 8];
+    snprintf(tmp, sizeof(tmp), "%s.part", path);
     snprintf(msg, sizeof(msg), "Fax saved, quality %d", q);
 
     if (best >= q) {
@@ -724,14 +745,17 @@ static void *save_worker(void *arg)
         printf("WEFAX PLAN: %s quality %d dropped, a copy has %d\n", job->product, q, best);
     } else if (mkdir(SAVE_DIR, 0775) != 0 && errno != EEXIST) {
         printf("WEFAX: can't make %s: %s\n", SAVE_DIR, strerror(errno));
-    } else if (!(fp = fopen(path, "wb"))) {
-        printf("WEFAX: can't write %s: %s\n", path, strerror(errno));
+    } else if (!(fp = fopen(tmp, "wb"))) {
+        printf("WEFAX: can't write %s: %s\n", tmp, strerror(errno));
     } else {
+        /* written aside, then renamed: the Bulletin never reads half a chart */
         ok = png_write_fixed(fp, job->img, WEFAX_WIDTH, job->rows, job->align, job->tilt);
         if (fclose(fp) != 0)
             ok = false;
+        if (ok && rename(tmp, path) != 0)
+            ok = false;
         if (!ok) {
-            remove(path);
+            remove(tmp);
             printf("WEFAX: writing %s failed\n", path);
         }
     }
@@ -1786,6 +1810,7 @@ static bool picture_open(const char *name)
         return false;
 
     picture_free();
+    pic_gen++;
     pic   = img;
     pic_w = w;
     pic_h = h;
@@ -1972,7 +1997,7 @@ static bool picture_save(void)
         return false;
     }
     printf("WEFAX: saved %s (%u x %u), align %d tilt %d\n", pic_path, pic_w, pic_h, br_align, br_tilt);
-    wefax_preview_make(SAVE_DIR, strrchr(pic_path, '/') + 1);
+    preview_later(strrchr(pic_path, '/') + 1);
     return true;
 }
 
@@ -2293,19 +2318,99 @@ static void fix_align_cb(button_data_t *data)
     }
 }
 
+/* Auto Tilt off the LVGL thread: the search takes the radio seconds, while a fax may be coming in row by row.
+ * The worker has its own copy of the picture; the timer takes its result if the same picture is still open. */
+typedef struct {
+    uint8_t *img;
+    unsigned w, h;
+    unsigned gen;
+} tilt_job_t;
+
+static pthread_mutex_t tilt_lock = PTHREAD_MUTEX_INITIALIZER;
+static bool            tilt_busy, tilt_done, tilt_ok;
+static int             tilt_found;
+static unsigned        tilt_gen;
+
+static void *tilt_worker(void *arg)
+{
+    tilt_job_t *job = arg;
+    int         t   = 0;
+    bool        ok  = wefax_auto_tilt(job->img, job->w, job->h, &t);
+
+    pthread_mutex_lock(&tilt_lock);
+    tilt_found = t;
+    tilt_ok    = ok;
+    tilt_gen   = job->gen;
+    tilt_done  = true;
+    tilt_busy  = false;
+    pthread_mutex_unlock(&tilt_lock);
+    free(job->img);
+    free(job);
+    return NULL;
+}
+
 static void auto_tilt_timer_cb(lv_timer_t *t)
 {
     char msg[48];
+    bool done, ok;
+    int  found;
+    unsigned gen;
 
+    pthread_mutex_lock(&tilt_lock);
+    done      = tilt_done;
+    ok        = tilt_ok;
+    found     = tilt_found;
+    gen       = tilt_gen;
+    tilt_done = false;
+    pthread_mutex_unlock(&tilt_lock);
+    if (!done)
+        return;
     lv_timer_del(t);
     browser_tilt_timer = NULL;
-    if (!br_open || !br_editing || !pic || br_tilt)
+    if (!br_open || !br_editing || !pic || br_tilt || gen != pic_gen)
+        return;     /* another picture, or touched up meanwhile */
+    if (!ok) {
+        channel_overlay_show("Auto Tilt: no clear tilt, MFK to set it");
         return;
-    br_tilt = wefax_auto_tilt(pic, pic_w, pic_h);
+    }
+    br_tilt = found;
     draw_picture();
     browser_buttons(true);
     snprintf(msg, sizeof(msg), "Auto Tilt %+d, MFK to adjust", br_tilt);
     channel_overlay_show(msg);
+}
+
+static void auto_tilt_start(void)
+{
+    tilt_job_t *job = malloc(sizeof(*job));
+    pthread_t   th;
+
+    pthread_mutex_lock(&tilt_lock);
+    bool busy = tilt_busy;
+    pthread_mutex_unlock(&tilt_lock);
+    if (busy || !job || !(job->img = malloc((size_t)pic_w * pic_h))) {
+        free(job);
+        return;
+    }
+    memcpy(job->img, pic, (size_t)pic_w * pic_h);
+    job->w   = pic_w;
+    job->h   = pic_h;
+    job->gen = pic_gen;
+    pthread_mutex_lock(&tilt_lock);
+    tilt_busy = true;
+    tilt_done = false;
+    pthread_mutex_unlock(&tilt_lock);
+    if (pthread_create(&th, NULL, tilt_worker, job) != 0) {
+        pthread_mutex_lock(&tilt_lock);
+        tilt_busy = false;
+        pthread_mutex_unlock(&tilt_lock);
+        free(job->img);
+        free(job);
+        return;
+    }
+    pthread_detach(th);
+    channel_overlay_show("Auto Tilt...");
+    browser_tilt_timer = lv_timer_create(auto_tilt_timer_cb, 100, NULL);
 }
 
 static void fix_tilt_cb(button_data_t *data)
@@ -2319,10 +2424,8 @@ static void fix_tilt_cb(button_data_t *data)
 
     /* from the tilt that straightens it, the MFK only touches it up; the overlay first, the search takes the radio
      * a few seconds */
-    if (!br_tilt && !browser_tilt_timer) {
-        channel_overlay_show("Auto Tilt...");
-        browser_tilt_timer = lv_timer_create(auto_tilt_timer_cb, 50, NULL);
-    }
+    if (!br_tilt && !browser_tilt_timer)
+        auto_tilt_start();
     if (canvas) {
         lv_group_focus_obj(canvas);
         lv_group_set_editing(keyboard_group, true);

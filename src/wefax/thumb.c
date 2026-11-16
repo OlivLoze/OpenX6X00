@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <png.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,7 +113,7 @@ static void preview_path(char *out, size_t n, const char *dir, const char *name)
 
 bool wefax_preview_make(const char *dir, const char *name)
 {
-    char     path[300], out[320], tmp[330];
+    char     path[300], out[320], tmp[352];
     unsigned w, h;
     uint8_t *img;
 
@@ -163,7 +164,7 @@ bool wefax_preview_make(const char *dir, const char *name)
         return false;
     }
     preview_path(out, sizeof(out), dir, name);
-    snprintf(tmp, sizeof(tmp), "%s.tmp", out);
+    snprintf(tmp, sizeof(tmp), "%s.%lx", out, (unsigned long)pthread_self());   /* each thread its own */
 
     FILE   *fp = fopen(tmp, "wb");
     uint8_t head[8] = {MAGIC[0], MAGIC[1], MAGIC[2], MAGIC[3], pw & 0xff, pw >> 8, ph & 0xff, ph >> 8};

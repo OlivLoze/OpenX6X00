@@ -55,10 +55,10 @@ static int64_t sharpness(const int16_t *dark, unsigned w, unsigned h, int tilt, 
     return s;
 }
 
-int wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h)
+bool wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h, int *tilt)
 {
-    if (!img || w < 16 || h < 16)
-        return 0;
+    if (!img || w < 16 || h < 16 || h > 4000)
+        return false;
 
     int16_t *dark = malloc(sizeof(*dark) * w * h);
     int32_t *prof = malloc(sizeof(*prof) * w);
@@ -66,7 +66,7 @@ int wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h)
     if (!dark || !prof) {
         free(dark);
         free(prof);
-        return 0;
+        return false;
     }
     for (unsigned y = 0; y < h; y++) {
         const uint8_t *r   = img + (size_t)y * w;
@@ -106,7 +106,10 @@ int wefax_auto_tilt(const uint8_t *img, unsigned w, unsigned h)
     }
     free(dark);
     free(prof);
-    return best;
+    if (best <= -WEFAX_TILT_MAX + 8 || best >= WEFAX_TILT_MAX - 8)
+        return false;   /* pinned at the end: no lines to go by */
+    *tilt = best;
+    return true;
 }
 
 /* ---- per station: "<station> <tilt> <tilt>...", the newest last ---- */
