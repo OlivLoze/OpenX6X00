@@ -37,7 +37,7 @@ typedef struct {
     uint32_t rows;          /* rows kept of this picture */
     int32_t  freq;          /* the station's frequency (dial + audio centre), Hz */
     char     station[40];   /* its name in the app's list, "" for none */
-    char     saved[48];     /* the last picture written to /mnt/wefax, file name */
+    char     saved[96];     /* the last picture written to /mnt/wefax, file name */
     uint32_t saves;         /* pictures written since the start */
     bool     plan;          /* Auto Plan follows the day's slots */
     char     plan_next[48]; /* its next slot: "HH:MM station kHz" */

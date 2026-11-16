@@ -22,6 +22,14 @@
 .wf-last a{display:block;color:var(--text);text-decoration:none;font:500 12px/1.4 var(--f-num,monospace)}
 .wf-last img{width:100%;aspect-ratio:3/2;object-fit:cover;object-position:top;background:#fff;border-radius:4px;display:block;margin-bottom:4px}
 .wf-last a:hover img{outline:1px solid var(--cc,var(--accent))}
+.wf-bul{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.wf-bul>*{display:flex;flex-direction:column;gap:3px;color:var(--text);text-decoration:none;min-width:0}
+.wf-bul .th{width:100%;aspect-ratio:3/2;border-radius:4px;background:#fff center top/cover no-repeat;margin-bottom:4px}
+.wf-bul .th.none{background:var(--panel2,rgba(255,255,255,.04));border:1px dashed var(--line,rgba(255,255,255,.14));display:flex;align-items:center;justify-content:center;color:var(--dim);font:500 12px/1.4 var(--f-num,monospace);text-align:center;padding:8px}
+.wf-bul b{font:600 13px/1.3 var(--f-lbl,monospace);letter-spacing:.08em;text-transform:uppercase}
+.wf-bul span{font:500 12px/1.4 var(--f-num,monospace);color:var(--dim)}
+.wf-bul .q{color:var(--text)}
+.wf-bul a:hover .th{outline:1px solid var(--cc,var(--accent))}
 </style>
 <h2><svg class="i"><use href="#i-image"/></svg>WeFax</h2>
 <p class="sub">The radio's WeFax app from here: the radio receives, decodes and saves each chart on its own card, with or
@@ -57,6 +65,12 @@ app's buttons. Receive only: nothing here transmits.</p>
     <div class="wf-st" id="stations"></div>
     <div class="wf-own"><input id="own" inputmode="decimal" placeholder="Other, kHz (published)"><button type="button" id="b-own">Tune</button></div>
   </div>
+</div>
+
+<div class="dp-card">
+  <div class="dp-head"><span class="dp-ico"><svg class="i"><use href="#i-image"/></svg></span>
+    <div><h3>Bulletin</h3><p>What the radio has of each kind of chart (the best copy, newest first), else when Auto Plan gets the next one (UTC)</p></div></div>
+  <div class="dp-body"><div class="wf-bul" id="bulletin"><span class="meta">Loading...</span></div></div>
 </div>
 
 <div class="dp-card">
@@ -157,7 +171,7 @@ app's buttons. Receive only: nothing here transmits.</p>
     $("#b-plan").prop("disabled", !f.open).attr("aria-pressed", String(f.open && !!f.plan));
     document.getElementById("plan").textContent = f.open && f.plan ? (f.next ? "next " + f.next + " kHz" : "on") : "off";
     if (f.gen !== picGen) { picGen = f.gen; if (f.fax) newPicture(); }
-    if (f.saves !== lastSaves) { if (lastSaves >= 0 || !canvas) loadLast(); lastSaves = f.saves; if (!f.fax) showSaved(f.saved); }
+    if (f.saves !== lastSaves) { if (lastSaves >= 0 || !canvas) { loadLast(); loadBulletin(); } lastSaves = f.saves; if (!f.fax) showSaved(f.saved); }
     markStation();
   }
   function markStation() {
@@ -171,6 +185,38 @@ app's buttons. Receive only: nothing here transmits.</p>
     if (!act("set freq " + dial)) return;
     send("set mode 2");                       /* USB: a band change brings the band plan's mode (LSB in 80 m) */
     status("Tuned " + khz.toFixed(1) + " kHz");
+  }
+
+  function ago(s) {
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min";
+    if (s < 172800) return Math.floor(s / 3600) + " h " + String(Math.floor(s % 3600 / 60)).padStart(2, "0");
+    return Math.floor(s / 86400) + " days";
+  }
+  function nextText(it) {
+    if (!it.next) return "not in the plan";
+    return "next " + it.next + (it.next_in < 3600 ? ", in " + Math.max(1, Math.round(it.next_in / 60)) + " min" : "");
+  }
+  function loadBulletin() {
+    $.get("/api/wefax/bulletin").then(function(r) {
+      const $b = $("#bulletin").empty();
+      if (!r.bulletin.length) { $b.append('<span class="meta">No Bulletin in the plan</span>'); return; }
+      r.bulletin.forEach(function(it) {
+        let $t;
+        if (it.file) {
+          const name = encodeURIComponent(it.file);
+          $t = $('<a target="_blank"><div class="th"></div><b></b><span class="q"></span><span></span></a>').attr("href", "/gallery/file/wefax/" + name);
+          $t.find(".th").css("background-image", "url(/gallery/thumb/wefax/" + name + ")");
+          const t = it.file.replace(/^wefax-\d{8}-(\d\d)(\d\d).*/, "$1:$2");
+          $t.find(".q").text(t + " · " + ago(it.age) + " ago" + (it.q != null ? " · q" + it.q : ""));
+        } else {
+          $t = $('<div><div class="th none"></div><b></b><span class="q">none yet</span><span></span></div>');
+          $t.find(".th").text(it.next ? (it.next_in < 3600 ? "in " + Math.max(1, Math.round(it.next_in / 60)) + " min" : "at " + it.next + " UTC") : "-");
+        }
+        $t.find("b").text(it.name);
+        $t.find("span").last().text(nextText(it));
+        $b.append($t);
+      });
+    }, function() { $("#bulletin").html('<span class="meta">Bulletin unavailable</span>'); });
   }
 
   function loadLast() {
@@ -240,5 +286,7 @@ app's buttons. Receive only: nothing here transmits.</p>
     onChange: function() { RadioLink.health(document.getElementById("health"), ses.chips()); }});
   link.connect();
   loadLast();
+  loadBulletin();
+  setInterval(loadBulletin, 60000);       /* the waits go down */
 })();
 </script>

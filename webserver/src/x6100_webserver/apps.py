@@ -459,6 +459,62 @@ def wefax_page():
     return bottle.template('wefax')
 
 
+WEFAX_NAME = re.compile(r'^wefax-(\d{8}-\d{6})-(.+?)(?:-q(\d+))?\.png$')
+
+
+def wefax_plan():
+    """The plan Auto Plan follows: /mnt/wefax/plan.json, else the firmware's (static/wefax_plan.json, the same file)."""
+    for path in (os.path.join(settings.FILEBROWSER_PATH, "wefax", "plan.json"),
+                 os.path.join(os.path.dirname(__file__), "static", "wefax_plan.json")):
+        try:
+            with open(path) as f:
+                plan = json.load(f)
+            if isinstance(plan.get("slots"), list):
+                return plan
+        except (OSError, ValueError):
+            continue
+    return {"slots": [], "bulletin": []}
+
+
+@app.get('/api/wefax/bulletin')
+def wefax_bulletin():
+    """Each kind of chart of the Bulletin: its newest copy (file, when, mark) and when the plan has the next one (UTC)."""
+    plan = wefax_plan()
+    try:
+        names = sorted((n for n in os.listdir(os.path.join(settings.FILEBROWSER_PATH, "wefax"))), reverse=True)
+    except OSError:
+        names = []
+    faxes = [(n, m) for n, m in ((n, WEFAX_NAME.match(n)) for n in names) if m]
+    now = time.time()
+    sod = int(now) % 86400
+    out = []
+    for kind in plan.get("bulletin", []):
+        match = tuple(kind.get("match", []))
+        item = {"name": kind.get("name", "")}
+        for name, m in faxes:
+            if m.group(2).startswith(match):
+                try:        # the file's own date: the name is in the radio's local time
+                    t = os.path.getmtime(os.path.join(settings.FILEBROWSER_PATH, "wefax", name))
+                except OSError:
+                    continue
+                item.update(file=name, product=m.group(2), age=int(now - t), q=int(m.group(3)) if m.group(3) else None)
+                break
+        waits = []
+        for slot in plan.get("slots", []):
+            try:
+                h, mi = map(int, str(slot.get("t", "")).split(":"))
+            except ValueError:
+                continue
+            if str(slot.get("prod", "")).startswith(match):
+                waits.append(((h * 3600 + mi * 60 - sod) % 86400, "%02d:%02d" % (h, mi), slot.get("st", "")))
+        if waits:
+            wait, hhmm, station = min(waits)
+            item.update(next=hhmm, next_in=wait, next_station=station)
+        out.append(item)
+    bottle.response.set_header("Cache-Control", "no-store")
+    return {"bulletin": out}
+
+
 @app.route('/ft8')
 def ft8_page():
     return bottle.template('ft8', grid=read_param("qth"))

@@ -32,6 +32,10 @@ typedef struct {
  * footer is probably cut), x 0.8. Slow (~0.5 s on the radio): a worker thread. m may be NULL. */
 float wefax_quality(const uint8_t *img, unsigned width, unsigned rows, bool no_stop, wefax_quality_measures_t *m);
 
+/* A quick look at a few rows (> 20): the median correlation of the dark pixels of a row with the next one (a chart
+ * 0.5-0.9, noise < 0.3) and in *dark the share of dark pixels (a chart mostly white, noise about half) */
+float wefax_quality_rows(const uint8_t *img, unsigned width, unsigned rows, float *dark);
+
 #ifdef __cplusplus
 }
 #endif

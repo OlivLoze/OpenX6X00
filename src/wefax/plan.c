@@ -16,9 +16,37 @@
 
 #define PLAN_FILE   BOARD_DATA "/wefax/plan.json"
 
-static wefax_slot_t slots[WEFAX_PLAN_MAX];
-static int          slots_n;
-static bool         from_file;
+static wefax_slot_t     slots[WEFAX_PLAN_MAX];
+static int              slots_n;
+static bool             from_file;
+static wefax_bulletin_t kinds[WEFAX_BULLETIN_MAX];
+static int              kinds_n;
+
+/* "bulletin": [{"name": "Analysis", "match": ["NW-analyse-surface", ...]}, ...] */
+static void parse_bulletin(cJSON *json)
+{
+    cJSON *list = cJSON_GetObjectItem(json, "bulletin"), *it;
+
+    kinds_n = 0;
+    if (!cJSON_IsArray(list))
+        return;
+    cJSON_ArrayForEach(it, list) {
+        cJSON *name = cJSON_GetObjectItem(it, "name"), *match = cJSON_GetObjectItem(it, "match"), *m;
+
+        if (kinds_n == WEFAX_BULLETIN_MAX || !cJSON_IsString(name) || !cJSON_IsArray(match))
+            continue;
+
+        wefax_bulletin_t *b = &kinds[kinds_n];
+
+        memset(b, 0, sizeof(*b));
+        snprintf(b->name, sizeof(b->name), "%s", name->valuestring);
+        cJSON_ArrayForEach(m, match)
+            if (b->n < WEFAX_BULLETIN_MATCH && cJSON_IsString(m) && m->valuestring[0])
+                snprintf(b->match[b->n++], sizeof(b->match[0]), "%s", m->valuestring);
+        if (b->n)
+            kinds_n++;
+    }
+}
 
 static int by_start(const void *a, const void *b)
 {
@@ -60,6 +88,7 @@ static int parse(const char *text)
         snprintf(s->station, sizeof(s->station), "%s", cJSON_IsString(st) ? st->valuestring : "");
         snprintf(s->product, sizeof(s->product), "%s", cJSON_IsString(prod) ? prod->valuestring : "");
     }
+    parse_bulletin(json);
     cJSON_Delete(json);
     qsort(slots, n, sizeof(slots[0]), by_start);
     return n;
@@ -114,4 +143,22 @@ bool wefax_plan_from_file(void)
 bool wefax_plan_product_unique(const char *product)
 {
     return !product[0] || strstr(product, "inconnu");
+}
+
+int wefax_plan_bulletin_count(void)
+{
+    return kinds_n;
+}
+
+const wefax_bulletin_t *wefax_plan_bulletin(int i)
+{
+    return i >= 0 && i < kinds_n ? &kinds[i] : NULL;
+}
+
+bool wefax_bulletin_has(const wefax_bulletin_t *b, const char *product)
+{
+    for (int i = 0; b && i < b->n; i++)
+        if (!strncmp(product, b->match[i], strlen(b->match[i])))
+            return true;
+    return false;
 }

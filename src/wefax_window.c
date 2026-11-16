@@ -87,6 +87,7 @@ static void fix_align_cb(button_data_t *data);
 static void fix_tilt_cb(button_data_t *data);
 static void done_cb(button_data_t *data);
 static void plan_cb(button_data_t *data);
+static void bulletin_cb(button_data_t *data);
 static const char *plan_label(void);
 
 static void browser_close(void);
@@ -168,6 +169,16 @@ static char        plan_next[48];   /* the next slot, for the header and the pan
 static int         fax_slot = -1;   /* the slot of the fax coming in */
 static time_t      fax_t0;          /* when it was confirmed */
 
+/* Auto Plan started during a chart: the decoder takes it from where it is, JOIN_ROWS rows tell a chart from noise */
+#define JOIN_ROWS       30
+#define JOIN_COHERENCE  0.35f       /* a chart's traces go on from a row to the next: 0.5-0.9, noise < 0.3 */
+#define JOIN_DARK       0.45f       /* a chart is mostly white, noise about half dark */
+#define JOIN_MIN_LEFT_S 120         /* not worth it for the last 2 minutes of a chart */
+
+static bool        join_probe;
+static int         join_slot = -1;
+static time_t      join_t0;         /* the start of the chart joined */
+
 
 /* ---- buttons: F1 goes round the 4 pages ---- */
 
@@ -194,11 +205,12 @@ static button_data_t btn_done      = {.type = BTN_TEXT, .label = "Done", .press 
 /* page 4: TX power */
 static button_data_t btn_page_4 = {.type = BTN_TEXT, .label = "(FAX 4:4)", .press = page_1_cb};
 static button_data_t btn_plan   = {.type = BTN_TEXT_FN, .label_fn = plan_label, .press = plan_cb};
+static button_data_t btn_bulletin = {.type = BTN_TEXT, .label = "Bulletin", .press = bulletin_cb};
 
 static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_freq, &btn_rx_mode, &btn_clear, &btn_close}};
 static buttons_page_t page_2 = {.items = {&btn_page_2, &btn_align, &btn_tilt, &btn_view, &btn_save}};
 static buttons_page_t page_3 = {.items = {&btn_page_3, &btn_browser, &btn_fix_align, &btn_fix_tilt, &btn_done}};
-static buttons_page_t page_4 = {.items = {&btn_page_4, &btn_plan, &btn_dig_pwr}};
+static buttons_page_t page_4 = {.items = {&btn_page_4, &btn_plan, &btn_bulletin, &btn_dig_pwr}};
 
 /* Frequency and mode come back when the app closes */
 static dialog_t dialog = {
@@ -808,8 +820,9 @@ static void auto_fax_over(bool stopped)
         printf("WEFAX AUTO: the fax could not be saved, kept\n");
         return;
     }
-    gen_seen = 0;
-    fax_on   = false;
+    gen_seen   = 0;
+    fax_on     = false;
+    join_probe = false;
     wefax_decoder_set_mode(decoder, WEFAX_MODE_AUTO);      /* one reset only: it keeps the pause after the stop */
     clear_fax();
 }
@@ -818,8 +831,9 @@ static void auto_fax_over(bool stopped)
 static void rx_restart(void)
 {
     wefax_decoder_reset(decoder);
-    gen_seen = 0;
-    fax_on   = false;
+    gen_seen   = 0;
+    fax_on     = false;
+    join_probe = false;
 }
 
 /* ---- audio thread ---- */
@@ -1093,31 +1107,45 @@ static void plan_start(void)
     memset(plan_done, 0, sizeof(plan_done));
     plan_on   = true;
     plan_dial = 0;
+    param_i_set(cfg_wefax_plan, 1);         /* on again when the app opens */
     buttons_mark(&btn_plan, true);
     channel_overlay_show(wefax_plan_from_file() ? "Auto Plan on (plan.json)" : "Auto Plan on");
     printf("WEFAX PLAN: on, %d slots\n", wefax_plan_count());
     plan_timer_cb(NULL);
 
-    /* between two slots: the frequency of the last one that started, Auto waits for the next start */
+    /* between two slots: the frequency of the last one that started; during its chart, the chart from here */
     time_t now = time(NULL);
     int    sod = plan_sod(now), last = -1, since = 0;
 
     for (int i = 0; i < wefax_plan_count(); i++) {
-        int d = -plan_wait(wefax_plan_slot(i), sod);
+        int d = -plan_wait(wefax_plan_slot(i), sod) - PLAN_EARLY_S;     /* s since its start */
 
-        if (d > 0 && (last < 0 || d < since))
+        if (d >= 0 && (last < 0 || d < since))
             last = i, since = d;
     }
-    if (!plan_dial && last >= 0 && !fax_on)
-        plan_tune(wefax_plan_slot(last));
+    if (plan_dial || last < 0 || fax_on)
+        return;
+
+    const wefax_slot_t *s = wefax_plan_slot(last);
+
+    plan_tune(s);
+    if (since < s->dur - JOIN_MIN_LEFT_S) {
+        join_slot  = last;
+        join_t0    = now - since;
+        join_probe = true;
+        wefax_decoder_auto_join(decoder);
+        printf("WEFAX PLAN: %02d:%02d %s started %d s ago, taken from here\n", s->min / 60, s->min % 60, s->product,
+               since);
+    }
 }
 
 static void plan_stop(const char *why)
 {
     if (!plan_on)
         return;
-    plan_on   = false;
-    plan_dial = 0;
+    plan_on    = false;
+    plan_dial  = 0;
+    join_probe = false;
     buttons_mark(&btn_plan, false);
     plan_show(-1);
     if (why)
@@ -1128,10 +1156,12 @@ static void plan_stop(const char *why)
 static void plan_cb(button_data_t *data)
 {
     (void)data;
-    if (plan_on)
+    if (plan_on) {
         plan_stop("Auto Plan off");
-    else
+        param_i_set(cfg_wefax_plan, 0);     /* off by hand: off when the app opens */
+    } else {
         plan_start();
+    }
 }
 
 /* ---- LVGL timer ---- */
@@ -1189,7 +1219,11 @@ static void view_timer_cb(lv_timer_t *t)
             clear_fax();
             fax_t0   = time(NULL);
             fax_slot = plan_on ? plan_slot_of_fax(fax_t0) : -1;
-            channel_overlay_show("Fax Started");
+            if (join_probe) {
+                fax_t0   = join_t0;
+                fax_slot = join_slot;
+            }
+            channel_overlay_show(join_probe ? "Taking the fax going on" : "Fax Started");
         }
 
         /* the stop tone: file I/O here, never in the audio thread */
@@ -1213,6 +1247,30 @@ static void view_timer_cb(lv_timer_t *t)
 
     store_add(row);
     remote_server_wefax_row(row, WEFAX_WIDTH, store_n);
+
+    /* a chart joined: its first rows say whether there is one */
+    if (join_probe && fax_on && store_n >= JOIN_ROWS) {
+        uint8_t *img = malloc((size_t)JOIN_ROWS * WEFAX_WIDTH);
+        float    dark = 1.0f, c = 0.0f;
+
+        join_probe = false;
+        if (img) {
+            for (unsigned r = 0; r < JOIN_ROWS; r++)
+                memcpy(img + (size_t)r * WEFAX_WIDTH, store_row(store_n - JOIN_ROWS + r), WEFAX_WIDTH);
+            c = wefax_quality_rows(img, WEFAX_WIDTH, JOIN_ROWS, &dark);
+            free(img);
+        }
+        printf("WEFAX PLAN: joined rows: coherence %.2f, dark %.2f\n", c, dark);
+        if (c < JOIN_COHERENCE || dark > JOIN_DARK) {
+            channel_overlay_show("No fax going on, waiting for the next");
+            fax_on   = false;
+            gen_seen = 0;
+            wefax_decoder_set_mode(decoder, WEFAX_MODE_AUTO);
+            clear_fax();
+            return;
+        }
+        channel_overlay_show("Fax going on: taken from here");
+    }
 
     /* a fax longer than the kept rows: save it rather than lose its top */
     if (auto_mode() && fax_on && store_n >= STORE_ROWS) {
@@ -1368,10 +1426,14 @@ static void app_open(lv_obj_t *parent)
     apply_view();
     view_timer = lv_timer_create(view_timer_cb, VIEW_MS, NULL);
 
-    plan_on   = false;
-    plan_dial = 0;
+    plan_on    = false;
+    plan_dial  = 0;
+    join_probe = false;
+    wefax_plan_load();                  /* the Bulletin needs it too */
     plan_show(-1);
     plan_timer = lv_timer_create(plan_timer_cb, 1000, NULL);
+    if (param_i_get(cfg_wefax_plan))
+        plan_start();                   /* off-grid: open the app and the charts come */
 }
 
 static void app_close(void)
@@ -1571,23 +1633,111 @@ static void browser_buttons(bool picture)
         buttons_refresh(&btn_done);
 }
 
+/* The list's rows: the Bulletin (a kind of chart a row, its newest copy), then every fax; each row a file (its index
+ * in files) or -1 (a title, a kind not received yet) */
+#define TABLE_ROWS  (WEFAX_BULLETIN_MAX + 2 + BROWSER_FILES)
+
+static int      row_file[TABLE_ROWS];
+static unsigned rows_n;
+
+/* When a fax was saved, from its name (local time, as written); -1 if not one of ours */
+static time_t name_time(const char *name)
+{
+    struct tm tm = {0};
+
+    if (strncmp(name, "wefax-", 6) || sscanf(name + 6, "%4d%2d%2d-%2d%2d%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+                                             &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 6)
+        return -1;
+    tm.tm_year -= 1900;
+    tm.tm_mon -= 1;
+    tm.tm_isdst = -1;
+    return mktime(&tm);
+}
+
+static void age_text(char *out, size_t n, long s)
+{
+    if (s < 3600)
+        snprintf(out, n, "%ld min", s < 60 ? 1 : s / 60);
+    else if (s < 48 * 3600)
+        snprintf(out, n, "%ld h %02ld", s / 3600, s % 3600 / 60);
+    else
+        snprintf(out, n, "%ld days", s / 86400);
+}
+
+/* A Bulletin row: the newest copy of the kind (when, how old, its mark) and when the next one comes; its file or -1 */
+static int bulletin_row(const wefax_bulletin_t *b, char *out, size_t n)
+{
+    time_t now  = time(NULL);
+    int    file = -1, sod = plan_sod(now), next = -1, wait = 0;
+
+    for (unsigned i = 0; i < files_n && file < 0; i++)      /* newest first */
+        if (strlen(files[i]) > 22 && files[i][21] == '-' && wefax_bulletin_has(b, files[i] + 22))
+            file = (int)i;
+    for (int i = 0; i < wefax_plan_count(); i++) {
+        const wefax_slot_t *s = wefax_plan_slot(i);
+        int                 d = (s->min * 60 - sod + 86400) % 86400;
+
+        if (wefax_bulletin_has(b, s->product) && (next < 0 || d < wait))
+            next = i, wait = d;
+    }
+
+    char have[64] = "none yet", when[40] = "";
+
+    if (file >= 0) {
+        const char *f = files[file], *q = strrchr(f, '-');
+        char        age[16];
+
+        age_text(age, sizeof(age), (long)(now - name_time(f)));
+        if (q && q[1] == 'q')
+            snprintf(have, sizeof(have), "%.2s:%.2s, %s ago, q%d", f + 15, f + 17, age, atoi(q + 2));
+        else
+            snprintf(have, sizeof(have), "%.2s:%.2s, %s ago", f + 15, f + 17, age);
+    }
+    if (next >= 0) {
+        const wefax_slot_t *s = wefax_plan_slot(next);
+
+        if (wait < 3600)
+            snprintf(when, sizeof(when), "   next %02d:%02d, in %d min", s->min / 60, s->min % 60, wait / 60);
+        else
+            snprintf(when, sizeof(when), "   next %02d:%02d", s->min / 60, s->min % 60);
+    }
+    snprintf(out, n, "%s:  %s%s", b->name, have, when);
+    return file;
+}
+
+static void table_row(const char *text, int file)
+{
+    lv_table_set_cell_value(table, rows_n, 0, text);
+    row_file[rows_n++] = file;
+}
+
 static void table_fill(void)
 {
     if (!table)
         return;
 
-    if (!files_n) {
-        lv_table_set_row_cnt(table, 1);
-        lv_table_set_cell_value(table, 0, 0, "No saved faxes");
-    } else {
-        lv_table_set_row_cnt(table, files_n);
-        for (unsigned i = 0; i < files_n; i++)
-            lv_table_set_cell_value(table, i, 0, files[i]);
+    int  kinds = wefax_plan_bulletin_count();
+    char text[160];
+
+    rows_n = 0;
+    lv_table_set_row_cnt(table, (kinds ? kinds + 2 : 0) + (files_n ? files_n : 1));
+    if (kinds) {
+        table_row("BULLETIN", -1);
+        for (int k = 0; k < kinds; k++) {
+            int f = bulletin_row(wefax_plan_bulletin(k), text, sizeof(text));
+
+            table_row(text, f);
+        }
+        table_row("ALL FAXES", -1);
     }
+    if (!files_n)
+        table_row("No saved faxes", -1);
+    for (unsigned i = 0; i < files_n; i++)
+        table_row(files[i], (int)i);
     lv_obj_invalidate(table);
 }
 
-/* The file selected in the list, or -1 */
+/* The file of the row selected in the list, or -1 */
 static int table_selected(void)
 {
     uint16_t row = LV_TABLE_CELL_NONE, col = LV_TABLE_CELL_NONE;
@@ -1595,7 +1745,7 @@ static int table_selected(void)
     if (!table || !files_n)
         return -1;
     lv_table_get_selected_cell(table, &row, &col);
-    return row == LV_TABLE_CELL_NONE || row >= files_n ? -1 : (int)row;
+    return row == LV_TABLE_CELL_NONE || row >= rows_n ? -1 : row_file[row];
 }
 
 static void table_focus(void)
@@ -1929,6 +2079,16 @@ static void page_3_cb(button_data_t *data)
     buttons_load_page(&page_3);
 }
 
+/* Page 4 Bulletin: the list of page 3 at its top, the Bulletin */
+static void bulletin_cb(button_data_t *data)
+{
+    (void)data;
+    page_3_cb(NULL);
+    if (br_open)
+        browser_close();
+    browser_open();
+}
+
 static void page_4_cb(button_data_t *data)
 {
     (void)data;
@@ -2139,7 +2299,10 @@ bool wefax_window_remote(wefax_rc_t what)
         case WEFAX_RC_SAVE:  save_cb(NULL); break;
         case WEFAX_RC_CLEAR: clear_cb(NULL); break;
         case WEFAX_RC_PLAN:  plan_start(); break;
-        case WEFAX_RC_UNPLAN: plan_stop("Auto Plan off"); break;
+        case WEFAX_RC_UNPLAN:
+            plan_stop("Auto Plan off");
+            param_i_set(cfg_wefax_plan, 0);
+            break;
     }
     buttons_refresh(&btn_rx_mode);
     return true;

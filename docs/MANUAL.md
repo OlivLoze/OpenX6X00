@@ -3522,7 +3522,7 @@ WeFax buttons. WeFax opens in RX Auto: it waits for the start tone of a fax.
 | 1 | Freq., RX Auto / Cont, Clear, Close |
 | 2 | Align, Tilt, View, Save |
 | 3 | Fax Browser, Fix Align, Fix Tilt, Done |
-| 4 | Auto Plan, Power |
+| 4 | Auto Plan, Bulletin, Power |
 
 Auto Plan (page 4) leaves WeFax on its own for the day: the radio follows a
 plan of the DWD and Northwood charts (UTC), each on the frequency that comes
@@ -3537,10 +3537,25 @@ before the chart starts. The button shows the next slot, the header too.
 - A chart is sent several times a day: of one chart (the same name within
   16 h) only the best copy is kept, a worse one is not written. Charts whose
   name holds `inconnu` are all kept.
-- Tuning by hand (Freq., the knob, the web page) stops Auto Plan; closing the
-  app too.
+- Auto Plan stays on: the app opens with it on until it is turned off with
+  its button (off-grid: put up an antenna, open WeFax, the charts come).
+  Tuning by hand (Freq., the knob, the web page) stops it until the app
+  opens again.
+- Opened during a chart of the plan (with more than 2 minutes of it to come),
+  the app takes the chart from where it is: its first 30 rows tell a chart
+  from noise, on noise it waits for the next start. Its top is missing and,
+  its phasing missed, it can sit sideways (Fix Align in the browser); a full
+  copy of the chart replaces it when one comes in.
+- Bulletin (page 4) opens the Fax Browser on the Bulletin: for each kind of
+  chart (analysis, forecasts at 24 h, 36-48 h and 3-5 days, sea and swell,
+  wind, significant weather, rain and visibility, ice) its newest copy, when
+  it was saved and its mark, and when the plan has the next one. A row with a
+  copy opens it; the whole list of faxes follows. The web WeFax page shows the
+  same Bulletin with the pictures.
 - The plan is in the firmware (tools/wefax_plan/plan.json, from a 48 h watch in
-  November 2026); a `/mnt/wefax/plan.json` of the same form replaces it.
+  November 2026, made for western Europe); a `/mnt/wefax/plan.json` of the same
+  form replaces it, its "bulletin" too (the kinds of chart and the products in
+  each).
 - The web WeFax page has the same Auto Plan button (remote `wefax plan` and
   `wefax unplan`).
 

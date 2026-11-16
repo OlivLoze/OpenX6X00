@@ -40,6 +40,21 @@ bool                wefax_plan_from_file(void);
 /* A product whose copies are all kept: unknown charts */
 bool wefax_plan_product_unique(const char *product);
 
+/* The Bulletin: the kinds of chart that matter on a trip (analysis, forecasts, sea...), each the products that start
+ * with one of its match strings, in the plan's order */
+#define WEFAX_BULLETIN_MAX      16
+#define WEFAX_BULLETIN_MATCH    6
+
+typedef struct {
+    char name[24];
+    char match[WEFAX_BULLETIN_MATCH][40];
+    int  n;
+} wefax_bulletin_t;
+
+int                     wefax_plan_bulletin_count(void);
+const wefax_bulletin_t *wefax_plan_bulletin(int i);
+bool                    wefax_bulletin_has(const wefax_bulletin_t *b, const char *product);
+
 #ifdef __cplusplus
 }
 #endif

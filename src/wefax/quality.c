@@ -307,3 +307,42 @@ float wefax_quality(const uint8_t *img, unsigned width, unsigned rows, bool no_s
     comp *= comp * (no_stop ? 0.8f : 1.0f);
     return 100.0f * expf(g) * comp;
 }
+
+float wefax_quality_rows(const uint8_t *img, unsigned w, unsigned rows, float *dark)
+{
+    float   *c = rows > 1 ? malloc((rows - 1) * sizeof(float)) : NULL;
+    unsigned prev = 0, all = 0;
+
+    if (dark)
+        *dark = 1.0f;
+    if (!c)
+        return 0.0f;
+    for (unsigned i = 0; i < rows; i++) {
+        const uint8_t *p = img + (size_t)i * w;
+        unsigned       n = 0;
+
+        for (unsigned x = 0; x < w; x++)
+            n += p[x] < DARK;
+        if (i) {
+            const uint8_t *q    = p - w;
+            unsigned       both = 0;
+
+            for (unsigned x = 0; x < w; x++)
+                both += (p[x] < DARK) & (q[x] < DARK);
+
+            double cov = both - (double)n * prev / w;
+            double va  = n - (double)n * n / w, vb = prev - (double)prev * prev / w;
+
+            c[i - 1] = (float)(cov / (sqrt(va * vb) + 1e-6));
+        }
+        prev = n;
+        all += n;
+    }
+    if (dark)
+        *dark = (float)all / ((float)rows * w);
+
+    float m = median_f(c, rows - 1);
+
+    free(c);
+    return m;
+}
