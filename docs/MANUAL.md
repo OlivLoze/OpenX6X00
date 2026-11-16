@@ -3564,26 +3564,41 @@ WeFax buttons. WeFax opens in RX Auto: it waits for the start tone of a fax.
 
 | Page | Buttons |
 |---|---|
-| 1 | Auto Plan, Bulletin, Fax Browser, Close |
+| 1 | Auto Plan (next HH:MM), Bulletin, All Charts, Close |
 | 2 | Freq., RX Auto / Cont, View, Clear |
 | 3 | Align, Tilt, Save, Power |
+| 4 | Night Auto / On / Off |
 
-The Fax Browser and the Bulletin have their own buttons while they show; F1
-(Browser, Bulletin) goes back to page 1, so does Close Browser or Close
-Bulletin. The status line under the picture says what the MFK does there.
+Waiting for a fax, the picture is dark and says what comes next: the chart,
+its station and frequency, when ("21:36 UTC, in 19 min") and the two after
+it. Night (page 4) dims the charts at night, white paper would dazzle: Auto
+dims them when the sun is down at the station's locator (6 degrees below the
+horizon, by the clock; never without a locator or a set clock), On and Off
+force it. The live picture, the tiles and the full screen are dimmed alike.
+
+The Bulletin, All Charts, a chart and the full screen have their own
+buttons; wherever the app is, F5 goes one level up (ESC too), F1 back to
+page 1. The status line under the picture says what the MFK does there.
 
 | Where | Buttons |
 |---|---|
-| Fax Browser, the list | Close Browser, Delete Fax |
-| Fax Browser, a fax open | Back to List, Fix Align, Fix Tilt, Done / Save Fax |
-| Bulletin, the tiles | Auto Plan, Open Chart, All Faxes, Close Bulletin |
-| Bulletin, one chart large | Auto Plan, Fix Chart, All Kinds, Close Bulletin |
+| Bulletin, the tiles | Auto Plan, Open, All Charts, < Fax |
+| All Charts, the tiles | Open, Newest, Delete, < Fax |
+| A chart large | Full Screen, Fix, Delete, < Tiles |
+| Full screen | Fix (F3), < Back (F5) |
+| Fix | Auto Tilt, Undo, Cancel, Save & Back |
 
-Fix Tilt on a saved fax first finds the tilt that straightens it (a station's
-line rate and the radio's never quite agree, each row comes a little earlier
-or later and the chart leans): "Auto Tilt -185" a few seconds after the press,
-then the MFK touches it up by one, "Tilt -183", and Save Fax writes it. Fix
-Align moves the fax 8 px a step, its value shown the same way.
+Delete takes a second press within 3 s: the first one turns the button into
+"Delete? press again" and says "Delete this chart?".
+
+Fix shows the whole chart over the screen, the buttons left visible, with
+upright lines to judge the frame by. It first finds the tilt that straightens
+the chart (a station's line rate and the radio's never quite agree, each row
+comes a little earlier or later and the chart leans): "Tilt -185 (auto)" a
+few seconds after; then the MFK touches the tilt up by one, VOL moves the
+chart 8 px a step (Align), a press of the MFK searches the tilt again. Undo
+goes back to the chart as saved, Cancel leaves without writing (ESC too), Save
+& Back writes it and its preview and goes back to the chart large.
 
 Auto Plan (page 1) leaves WeFax on its own for the day: the radio follows a
 plan of the DWD and Northwood charts (UTC), each on the frequency that comes
@@ -3610,25 +3625,29 @@ before the chart starts. The button shows the next slot, the header too.
 - Opened during a chart of the plan (with more than 2 minutes of it to come),
   the app takes the chart from where it is: its first 30 rows tell a chart
   from noise, on noise it waits for the next start. Its top is missing and,
-  its phasing missed, it can sit sideways (Fix Align in the browser); a full
+  its phasing missed, it can sit sideways (Align in Fix); a full
   copy of the chart replaces it when one comes in.
 - Bulletin (page 1) shows each kind of chart (analysis, forecasts at 24 h,
   36-48 h and 3-5 days, sea and swell, wind, significant weather, rain and
-  visibility, ice) as a tile, eight a page: its newest copy, how old it is
-  (the dot green under 6 h, orange under 24 h, red older) and its mark; a kind
-  with no copy yet says when the plan has the next one, and the chart coming
-  in draws in its tile ("receiving 40 %"). The MFK picks a tile, its press
-  (or Open Chart) shows it large: the whole chart, its station and frequency,
-  when it was taken, its mark and the next one; the MFK goes through the
-  kinds there, All Kinds goes back to the tiles. A press there shows the
-  chart over the whole screen: the next press goes x2, then 1:1 (the
-  pressure figures readable), then whole again; the MFK moves up and down,
-  VOL left and right, a small map in the corner shows where; any button goes
-  back. Fix Chart opens it in the Fax Browser for Fix Align and Fix Tilt;
-  All Faxes is the Browser's list of every fax. The tiles come from a small preview of each
-  chart in `/mnt/wefax/thumbs`, made when it is saved; a chart saved before
-  gets one the first time it is shown ("preparing" a few seconds). The web
-  WeFax page shows the same Bulletin.
+  visibility, ice) as a tile, eight a page: its newest copy of fair quality,
+  how old it is (the dot green under 6 h, orange under 24 h, red older) and its
+  quality in a word (good from 70, fair from 30, poor under); a kind with no
+  copy yet says when the plan has the next one, and the chart coming in draws
+  in its tile ("receiving 40 %"). The MFK picks a tile, its press (or Open)
+  shows it large: the whole chart, its station and frequency, when it was
+  received, its quality, the next copy, and what the dots mean; for a kind
+  with no copy yet, its next four broadcasts. The MFK goes through them
+  there, < Tiles goes back. A press there (or Full Screen) shows the chart
+  over the whole screen: the next press goes x2, then 1:1 (the pressure
+  figures readable), then whole again; the MFK moves up and down, VOL left
+  and right, a small map in the corner shows where.
+- All Charts (page 1) has every chart saved as tiles too, the newest 128
+  first, named in words (Analysis, Forecast 48 h, Upper air 60-72 h, Sea and
+  swell, Unsorted for a fax not of the plan) with when, the station and the
+  quality; Newest goes back to the first one. The tiles come from a small
+  preview of each chart in `/mnt/wefax/thumbs`, made when it is saved; a
+  chart saved before gets one the first time it is shown ("preparing" a few
+  seconds). The web WeFax page shows the same Bulletin.
 - The plan is in the firmware (tools/wefax_plan/plan.json, from a 48 h watch in
   November 2026, made for western Europe); a `/mnt/wefax/plan.json` of the same
   form replaces it, its "bulletin" too (the kinds of chart and the products in

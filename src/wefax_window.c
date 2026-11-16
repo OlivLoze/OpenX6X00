@@ -2,9 +2,11 @@
  *  SPDX-License-Identifier: LGPL-2.1-or-later
  *
  *  Xiegu X6100 LVGL GUI - WeFax app: reception in Auto (APT start/stop) or
- *  Cont, live view with Align and Tilt, faxes saved as PNG in /mnt/wefax, a
- *  browser to straighten or delete them, TX of a picture. Auto Plan follows the
- *  day's slots (wefax/plan.c) and keeps the best copy of each chart.
+ *  Cont, live view with Align and Tilt, faxes saved as PNG in /mnt/wefax, the
+ *  Bulletin and All Charts as tiles (wefax_bulletin.c), a chart over the whole
+ *  screen to straighten it (wefax_viewer.c), TX of a picture. Auto Plan follows
+ *  the day's slots (wefax/plan.c) and keeps the best copy of each chart.
+ *  F5 goes one level up wherever the app is.
  */
 
 #include "screen_main.h"
@@ -12,6 +14,7 @@
 #include "wefax_window.h"
 #include "wefax_bulletin.h"
 #include "wefax_viewer.h"
+#include "wefax_night.h"
 #include "freq_list.h"
 #include "wefax/decoder.h"
 #include "wefax/encoder.h"
@@ -58,7 +61,6 @@
 #define STORE_ROWS      2400
 #define SAVE_DIR        BOARD_DATA "/wefax"
 #define TX_DIR          SAVE_DIR "/tx_pics"
-#define BROWSER_FILES   128
 
 typedef enum {
     VIEW_SMALL = 0,     /* low panel, the waterfall stays visible */
@@ -74,7 +76,7 @@ static void audio_cb(unsigned int n, float *samples);
 static void page_1_cb(button_data_t *data);
 static void page_2_cb(button_data_t *data);
 static void page_3_cb(button_data_t *data);
-static void br_back_cb(button_data_t *data);
+static void page_4_cb(button_data_t *data);
 static void viewer_back_cb(button_data_t *data);
 static void close_cb(button_data_t *data);
 static void freq_cb(button_data_t *data);
@@ -87,19 +89,26 @@ static void tilt_cb(button_data_t *data);
 static const char *tilt_label(void);
 static void view_cb(button_data_t *data);
 static void save_cb(button_data_t *data);
-static void browser_cb(button_data_t *data);
-static void fix_align_cb(button_data_t *data);
-static void fix_tilt_cb(button_data_t *data);
-static void done_cb(button_data_t *data);
+static void all_charts_cb(button_data_t *data);
+static void night_cb(button_data_t *data);
+static const char *night_label(void);
 static void plan_cb(button_data_t *data);
 static void bulletin_cb(button_data_t *data);
-static void bul_open_cb(button_data_t *data);
-static const char *bul_open_label(void);
-static void bul_back_cb(button_data_t *data);
-static const char *bul_back_label(void);
+static void tiles_open_cb(button_data_t *data);
+static void tiles_back_cb(button_data_t *data);
+static void tiles_newest_cb(button_data_t *data);
+static void tiles_delete_cb(button_data_t *data);
+static const char *tiles_delete_label(void);
+static void chart_full_cb(button_data_t *data);
+static void chart_fix_cb(button_data_t *data);
+static void fix_auto_cb(button_data_t *data);
+static void fix_undo_cb(button_data_t *data);
+static void fix_cancel_cb(button_data_t *data);
+static void fix_save_cb(button_data_t *data);
 static const char *plan_label(void);
 
-static void browser_close(void);
+static void tiles_buttons(void);
+static void idle_update(void);
 static void draw_live(void);
 static void plan_stop(const char *why);
 static void rx_auto(void);
@@ -129,7 +138,7 @@ static view_t     view = VIEW_SMALL;
 static lv_obj_t  *app_parent;
 static lv_obj_t  *canvas, *viewport, *panel;
 static app_frame_t frame;          /* header and status line, Big and Full */
-static lv_timer_t *view_timer, *browser_save_timer, *browser_tilt_timer;
+static lv_timer_t *view_timer;
 static bool       align_on, tilt_on; /* the encoder turns live Align / Tilt */
 
 /* PNG written by a worker, the LVGL thread only takes a copy */
@@ -148,17 +157,6 @@ static pthread_mutex_t save_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool save_busy, save_over, save_ok;
 static char save_msg[48];             /* what the overlay says once it is written */
 
-/* browser of the saved faxes (page 3) */
-static lv_obj_t *table;
-static char     *files[BROWSER_FILES];
-static unsigned  files_n;
-static bool      br_open, br_editing, br_align_on, br_tilt_on, br_modified;
-static int       br_align, br_tilt;
-static uint8_t  *pic;
-static unsigned  pic_w, pic_h;
-static char      pic_path[256];
-static unsigned  pic_gen;           /* counts the pictures opened: Auto Tilt's result is for one */
-
 /* TX (web remote): a worker plays the picture through tx_player, no RX meanwhile */
 static pthread_t     tx_thread;
 static bool          tx_thread_on;
@@ -175,8 +173,10 @@ static lv_timer_t *plan_timer;
 static bool        plan_on;
 static int32_t     plan_dial;       /* what the plan tuned: another dial is tuning by hand */
 static time_t      plan_done[WEFAX_PLAN_MAX];  /* when each slot was taken or skipped */
-static char        plan_btn[16] = "Auto\nPlan";
+static char        plan_btn[24] = "Auto\nPlan";
 static char        plan_next[48];   /* the next slot, for the header and the panel */
+static int         plan_next_i = -1;
+static lv_obj_t   *idle, *idle_what, *idle_when, *idle_then;   /* the live view waiting: what comes next */
 static int         fax_slot = -1;   /* the slot of the fax coming in */
 static time_t      fax_t0;          /* when it was confirmed */
 
@@ -193,55 +193,65 @@ static time_t      join_t0;         /* the start of the chart joined */
 
 /* ---- buttons: F1 goes round the 4 pages ---- */
 
-/* Page 1 what the app is for off-grid, 2 reception by hand, 3 the live picture's settings and TX power; the Fax
- * Browser and the Bulletin have their own buttons while they show, F1 back to page 1 */
-static button_data_t btn_page_1  = {.type = BTN_TEXT, .label = "(FAX 1:3)", .press = page_2_cb};
+/* Page 1 what the app is for off-grid, 2 reception by hand, 3 the live picture's settings and TX power, 4 the
+ * charts at night. The tiles, a chart and the full screen have their own buttons, F5 one level up there */
+
+static button_data_t btn_page_1  = {.type = BTN_TEXT, .label = "(FAX 1:4)", .press = page_2_cb};
 static button_data_t btn_plan    = {.type = BTN_TEXT_FN, .label_fn = plan_label, .press = plan_cb};
 static button_data_t btn_bulletin = {.type = BTN_TEXT, .label = "Bulletin", .press = bulletin_cb};
-static button_data_t btn_browser = {.type = BTN_TEXT, .label = "Fax\nBrowser", .press = browser_cb};
+static button_data_t btn_all     = {.type = BTN_TEXT, .label = "All\nCharts", .press = all_charts_cb};
 static button_data_t btn_close   = {.type = BTN_TEXT, .label = "Close", .press = close_cb};
 
-static button_data_t btn_page_2  = {.type = BTN_TEXT, .label = "(FAX 2:3)", .press = page_3_cb};
+static button_data_t btn_page_2  = {.type = BTN_TEXT, .label = "(FAX 2:4)", .press = page_3_cb};
 static button_data_t btn_freq    = {.type = BTN_TEXT, .label = "Freq.", .press = freq_cb};
 static button_data_t btn_rx_mode = {.type = BTN_TEXT_FN, .label_fn = rx_mode_label, .press = rx_mode_cb};
 static button_data_t btn_view    = {.type = BTN_TEXT, .label = "View\nBig", .press = view_cb};
 static button_data_t btn_clear   = {.type = BTN_TEXT, .label = "Clear", .press = clear_cb};
 
-static button_data_t btn_page_3 = {.type = BTN_TEXT, .label = "(FAX 3:3)", .press = page_1_cb};
+static button_data_t btn_page_3 = {.type = BTN_TEXT, .label = "(FAX 3:4)", .press = page_4_cb};
 static button_data_t btn_align  = {.type = BTN_TEXT_FN, .label_fn = align_label, .press = align_cb,
                                    .ctrl = CTRL_WEFAX_ALIGN, .encoder_allowed = true};
 static button_data_t btn_tilt   = {.type = BTN_TEXT_FN, .label_fn = tilt_label, .press = tilt_cb,
                                    .ctrl = CTRL_WEFAX_TILT, .encoder_allowed = true};
 static button_data_t btn_save   = {.type = BTN_TEXT, .label = "Save", .press = save_cb};
 
-static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_plan, &btn_bulletin, &btn_browser, &btn_close}};
+static button_data_t btn_page_4 = {.type = BTN_TEXT, .label = "(FAX 4:4)", .press = page_1_cb};
+static button_data_t btn_night  = {.type = BTN_TEXT_FN, .label_fn = night_label, .press = night_cb};
+
+static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_plan, &btn_bulletin, &btn_all, &btn_close}};
 static buttons_page_t page_2 = {.items = {&btn_page_2, &btn_freq, &btn_rx_mode, &btn_view, &btn_clear}};
 static buttons_page_t page_3 = {.items = {&btn_page_3, &btn_align, &btn_tilt, &btn_save, &btn_dig_pwr}};
+static buttons_page_t page_4 = {.items = {&btn_page_4, &btn_night, NULL, NULL, NULL}};
 
-/* The Fax Browser: its list, a fax open */
-static button_data_t btn_br_page   = {.type = BTN_TEXT, .label = "(Browser)", .press = page_1_cb};
-static button_data_t btn_br_close  = {.type = BTN_TEXT, .label = "Close\nBrowser", .press = page_1_cb};
-static button_data_t btn_br_back   = {.type = BTN_TEXT, .label = "Back to\nList", .press = br_back_cb};
-static button_data_t btn_fix_align = {.type = BTN_TEXT, .label = "Fix\nAlign", .press = fix_align_cb};
-static button_data_t btn_fix_tilt  = {.type = BTN_TEXT, .label = "Fix\nTilt", .press = fix_tilt_cb};
-static button_data_t btn_done      = {.type = BTN_TEXT, .label = "Done", .press = done_cb};
-
-static buttons_page_t page_br_list = {.items = {&btn_br_page, &btn_br_close, NULL, NULL, &btn_done}};
-static buttons_page_t page_br_pic  = {.items = {&btn_br_page, &btn_br_back, &btn_fix_align, &btn_fix_tilt, &btn_done}};
-
-/* The Bulletin: its tiles, one of them large */
+/* the tiles: the Bulletin's and All Charts' */
 static button_data_t btn_bul_page  = {.type = BTN_TEXT, .label = "(Bulletin)", .press = page_1_cb};
-static button_data_t btn_bul_open  = {.type = BTN_TEXT_FN, .label_fn = bul_open_label, .press = bul_open_cb};
-static button_data_t btn_bul_back  = {.type = BTN_TEXT_FN, .label_fn = bul_back_label, .press = bul_back_cb};
-static button_data_t btn_bul_close = {.type = BTN_TEXT, .label = "Close\nBulletin", .press = page_1_cb};
-static buttons_page_t page_bul = {.items = {&btn_bul_page, &btn_plan, &btn_bul_open, &btn_bul_back, &btn_bul_close}};
+static button_data_t btn_all_page  = {.type = BTN_TEXT, .label = "(All Charts)", .press = page_1_cb};
+static button_data_t btn_open      = {.type = BTN_TEXT, .label = "Open", .press = tiles_open_cb};
+static button_data_t btn_newest    = {.type = BTN_TEXT, .label = "Newest", .press = tiles_newest_cb};
+static button_data_t btn_delete    = {.type = BTN_TEXT_FN, .label_fn = tiles_delete_label, .press = tiles_delete_cb};
+static button_data_t btn_to_fax    = {.type = BTN_TEXT, .label = "< Fax", .press = tiles_back_cb};
 
-/* The full screen viewer: any button goes back (they are under it, unseen) */
-static button_data_t btn_vw[5] = {
-    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}, {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb},
-    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}, {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb},
-    {.type = BTN_TEXT, .label = "Back", .press = viewer_back_cb}};
-static buttons_page_t page_viewer = {.items = {&btn_vw[0], &btn_vw[1], &btn_vw[2], &btn_vw[3], &btn_vw[4]}};
+static buttons_page_t page_bul = {.items = {&btn_bul_page, &btn_plan, &btn_open, &btn_all, &btn_to_fax}};
+static buttons_page_t page_all = {.items = {&btn_all_page, &btn_open, &btn_newest, &btn_delete, &btn_to_fax}};
+
+/* one chart large */
+static button_data_t btn_chart_page = {.type = BTN_TEXT, .label = "(Chart)", .press = page_1_cb};
+static button_data_t btn_full       = {.type = BTN_TEXT, .label = "Full\nScreen", .press = chart_full_cb};
+static button_data_t btn_fix        = {.type = BTN_TEXT, .label = "Fix", .press = chart_fix_cb};
+static button_data_t btn_to_tiles   = {.type = BTN_TEXT, .label = "< Tiles", .press = tiles_back_cb};
+
+static buttons_page_t page_chart = {.items = {&btn_chart_page, &btn_full, &btn_fix, &btn_delete, &btn_to_tiles}};
+
+/* the full screen viewer, and its Fix */
+static button_data_t btn_vw_back = {.type = BTN_TEXT, .label = "< Back", .press = viewer_back_cb};
+static buttons_page_t page_viewer = {.items = {NULL, NULL, &btn_fix, NULL, &btn_vw_back}};
+
+static button_data_t btn_fix_page   = {.type = BTN_TEXT, .label = "(Fix)", .press = NULL};
+static button_data_t btn_fix_auto   = {.type = BTN_TEXT, .label = "Auto\nTilt", .press = fix_auto_cb};
+static button_data_t btn_fix_undo   = {.type = BTN_TEXT, .label = "Undo", .press = fix_undo_cb};
+static button_data_t btn_fix_cancel = {.type = BTN_TEXT, .label = "Cancel", .press = fix_cancel_cb};
+static button_data_t btn_fix_save   = {.type = BTN_TEXT, .label = "Save\n& Back", .press = fix_save_cb};
+static buttons_page_t page_fix = {.items = {&btn_fix_page, &btn_fix_auto, &btn_fix_undo, &btn_fix_cancel, &btn_fix_save}};
 
 /* Frequency and mode come back when the app closes */
 static dialog_t dialog = {
@@ -400,8 +410,11 @@ static void fill_view(lv_color_t c)
         view_buf[i] = c;
 }
 
+static bool night_now;       /* the drawing under way dims its rows */
+
 static void put_px(unsigned x, unsigned y, uint8_t g)
 {
+    g = wefax_night_grey(g, night_now);
     view_buf[y * VIEW_W + x] = lv_color_make(g, g, g);
 }
 
@@ -431,7 +444,7 @@ static void store_add(const uint8_t *row)
 /* Empty view, kept rows and the row in the box */
 static void clear_fax(void)
 {
-    fill_view(lv_color_make(255, 255, 255));
+    fill_view(TC(panel));
     shown_acc = shown_n = shown_head = 0;
     if (canvas)
         lv_obj_invalidate(canvas);
@@ -453,7 +466,8 @@ static void draw_full(void)
     if (!canvas)
         return;
 
-    fill_view(lv_color_white());
+    night_now = wefax_night();
+    fill_view(TC(panel));
     if (!store || !store_n) {
         lv_obj_invalidate(canvas);
         return;
@@ -506,7 +520,8 @@ static void draw_live(void)
     unsigned first = (shown_head + VIEW_H - shown_n) % VIEW_H;
     unsigned y0    = VIEW_H - shown_n;
 
-    fill_view(lv_color_make(255, 255, 255));
+    night_now = wefax_night();
+    fill_view(TC(panel));
     for (unsigned r = 0; r < shown_n; r++) {
         const uint8_t *src   = shown[(first + r) % VIEW_H];
         int            shift = ((int)r - (int)(shown_n - 1)) * tilt / 1000;
@@ -519,46 +534,6 @@ static void draw_live(void)
             for (unsigned sx = from; sx < to; sx++)
                 sum += src[wrap_x((int)sx - align - shift, WEFAX_WIDTH)];
             put_px(x, y0 + r, (uint8_t)(sum / (to - from)));
-        }
-    }
-    if (canvas)
-        lv_obj_invalidate(canvas);
-}
-
-/* Browser: the opened picture with its own corrections, fitted and centred on black */
-static void draw_picture(void)
-{
-    if (!pic || !pic_w || !pic_h)
-        return;
-
-    unsigned w = VIEW_W, h = (unsigned)((uint64_t)pic_h * VIEW_W / pic_w);
-
-    if (h > VIEW_H) {
-        h = VIEW_H;
-        w = (unsigned)((uint64_t)pic_w * VIEW_H / pic_h);
-    }
-    if (w < 1)
-        w = 1;
-    if (h < 1)
-        h = 1;
-
-    unsigned x0 = (VIEW_W - w) / 2, y0 = (VIEW_H - h) / 2;
-
-    fill_view(lv_color_make(0, 0, 0));
-    for (unsigned y = 0; y < h; y++) {
-        unsigned sy = (unsigned)((uint64_t)y * pic_h / h);
-
-        if (sy >= pic_h)
-            sy = pic_h - 1;
-
-        int shift = tilt_px((int64_t)sy - (int64_t)(pic_h - 1), br_tilt, pic_w);
-
-        for (unsigned x = 0; x < w; x++) {
-            unsigned dx = (unsigned)((uint64_t)x * pic_w / w);
-
-            if (dx >= pic_w)
-                dx = pic_w - 1;
-            put_px(x0 + x, y0 + y, pic[(size_t)sy * pic_w + (unsigned)wrap_x((int)dx - br_align - shift, (int)pic_w)]);
         }
     }
     if (canvas)
@@ -585,40 +560,6 @@ static void preview_later(const char *name)
         pthread_detach(th);
     else
         free(copy);
-}
-
-static bool png_write_fixed(FILE *fp, const uint8_t *img, unsigned w, unsigned h, int align, int tilt)
-{
-    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    png_infop   info = png ? png_create_info_struct(png) : NULL;
-    uint8_t    *line = malloc(w);
-
-    if (!png || !info || !line) {
-        png_destroy_write_struct(&png, info ? &info : NULL);
-        free(line);
-        return false;
-    }
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_write_struct(&png, &info);
-        free(line);
-        return false;
-    }
-    png_init_io(png, fp);
-    png_set_IHDR(png, info, w, h, 8, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
-                 PNG_FILTER_TYPE_DEFAULT);
-    png_write_info(png, info);
-    for (unsigned y = 0; y < h; y++) {
-        const uint8_t *src   = img + (size_t)y * w;
-        int            shift = tilt_px((int64_t)y - (int64_t)(h - 1), tilt, w);
-
-        for (unsigned x = 0; x < w; x++)
-            line[x] = src[wrap_x((int)x - align - shift, (int)w)];
-        png_write_row(png, line);
-    }
-    png_write_end(png, NULL);
-    png_destroy_write_struct(&png, &info);
-    free(line);
-    return true;
 }
 
 /* ---- what the panel sees (wefax_window_status) ---- */
@@ -718,7 +659,6 @@ static void *save_worker(void *arg)
 {
     save_job_t *job = arg;
     bool        ok  = false, dropped = false;
-    FILE       *fp;
     char        path[sizeof(job->path) + sizeof(job->product) + 16], msg[sizeof(save_msg)];
     int         q    = (int)lroundf(wefax_quality(job->img, WEFAX_WIDTH, job->rows, job->no_stop, NULL));
     bool        same = job->product[0] && !wefax_plan_product_unique(job->product);
@@ -734,8 +674,6 @@ static void *save_worker(void *arg)
     }
 
     snprintf(path, sizeof(path), "%s%s%s-q%d.png", job->path, job->product[0] ? "-" : "", job->product, q);
-    char tmp[sizeof(path) + 8];
-    snprintf(tmp, sizeof(tmp), "%s.part", path);
     snprintf(msg, sizeof(msg), "Fax saved, quality %d", q);
 
     if (best >= q) {
@@ -745,19 +683,9 @@ static void *save_worker(void *arg)
         printf("WEFAX PLAN: %s quality %d dropped, a copy has %d\n", job->product, q, best);
     } else if (mkdir(SAVE_DIR, 0775) != 0 && errno != EEXIST) {
         printf("WEFAX: can't make %s: %s\n", SAVE_DIR, strerror(errno));
-    } else if (!(fp = fopen(tmp, "wb"))) {
-        printf("WEFAX: can't write %s: %s\n", tmp, strerror(errno));
     } else {
         /* written aside, then renamed: the Bulletin never reads half a chart */
-        ok = png_write_fixed(fp, job->img, WEFAX_WIDTH, job->rows, job->align, job->tilt);
-        if (fclose(fp) != 0)
-            ok = false;
-        if (ok && rename(tmp, path) != 0)
-            ok = false;
-        if (!ok) {
-            remove(tmp);
-            printf("WEFAX: writing %s failed\n", path);
-        }
+        ok = wefax_png_write_fixed(path, job->img, WEFAX_WIDTH, job->rows, job->align, job->tilt);
     }
 
     if (ok && !dropped) {
@@ -1079,9 +1007,10 @@ static void plan_show(int next)
     if (!plan_on)
         snprintf(l, sizeof(l), "Auto\nPlan");
     else if (!s)
-        snprintf(l, sizeof(l), "Plan\n--:--");
+        snprintf(l, sizeof(l), "Auto Plan\nnext --:--");
     else
-        snprintf(l, sizeof(l), "Plan\n%02d:%02d", s->min / 60, s->min % 60);
+        snprintf(l, sizeof(l), "Auto Plan\nnext %02d:%02d", s->min / 60, s->min % 60);
+    plan_next_i = plan_on && s ? next : -1;
     if (s && plan_on)
         snprintf(plan_next, sizeof(plan_next), "%02d:%02d %s %.1f", s->min / 60, s->min % 60, s->station,
                  s->freq_hz / 1000.0);
@@ -1143,6 +1072,7 @@ static void plan_take(int i, time_t now)
 static void plan_timer_cb(lv_timer_t *t)
 {
     (void)t;
+    idle_update();
     if (!plan_on || !decoder || tx_running)
         return;
     if (plan_dial && cparam_i_get(cfg_fg_freq) != plan_dial) {
@@ -1267,9 +1197,109 @@ static void header_update(void)
         lv_label_set_text(frame.head_right, r);
 }
 
+/* The live view waiting, Auto: what comes next instead of an empty picture */
+static void idle_update(void)
+{
+    if (!idle)
+        return;
+
+    bool show = !store_n && !tx_running && view != VIEW_SMALL && !wefax_bulletin_is_open();
+
+    if (!show) {
+        lv_obj_add_flag(idle, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_clear_flag(idle, LV_OBJ_FLAG_HIDDEN);
+
+    const wefax_slot_t *s = plan_next_i >= 0 ? wefax_plan_slot(plan_next_i) : NULL;
+
+    if (!s) {
+        lv_label_set_text(idle_what, plan_on ? "No chart planned" : "Auto Plan is off");
+        lv_label_set_text(idle_when, "a fax starts by itself with its start tone");
+        lv_label_set_text(idle_then, plan_on ? "" : "Auto Plan (F2) takes the day's charts by itself");
+        return;
+    }
+
+    char   name[48], then[96] = "", one[48];
+    time_t now = time(NULL);
+    int    sod = plan_sod(now), wait = plan_wait(s, sod), n = 0;
+
+    wefax_bulletin_product_name(s->product, name, sizeof(name));
+    lv_label_set_text_fmt(idle_what, "%s  -  %s %.1f kHz", name, s->station, s->freq_hz / 1000.0);
+    if (wait < 60)
+        lv_label_set_text_fmt(idle_when, "%02d:%02d UTC, now", s->min / 60, s->min % 60);
+    else if (wait < 3600)
+        lv_label_set_text_fmt(idle_when, "%02d:%02d UTC, in %d min", s->min / 60, s->min % 60, wait / 60);
+    else
+        lv_label_set_text_fmt(idle_when, "%02d:%02d UTC, in %d h %02d", s->min / 60, s->min % 60, wait / 3600,
+                              wait % 3600 / 60);
+
+    /* the two after it */
+    for (int k = 1; k <= 2; k++) {
+        int best = -1, bw = 0;
+
+        for (int i = 0; i < wefax_plan_count(); i++) {
+            int d = (plan_wait(wefax_plan_slot(i), sod) + 86400) % 86400;
+
+            if (d > (wait + 86400) % 86400 && (best < 0 || d < bw) && (n == 0 || d > n))
+                best = i, bw = d;
+        }
+        if (best < 0)
+            break;
+        n = bw;
+
+        const wefax_slot_t *o = wefax_plan_slot(best);
+
+        wefax_bulletin_product_name(o->product, one, sizeof(one));
+        snprintf(then + strlen(then), sizeof(then) - strlen(then), "%s%02d:%02d %s (%s)", k > 1 ? "   " : "then ",
+                 o->min / 60, o->min % 60, one, o->station);
+    }
+    lv_label_set_text(idle_then, then);
+}
+
+static void idle_create(void)
+{
+    idle = lv_obj_create(viewport);
+    lv_obj_remove_style_all(idle);
+    lv_obj_set_size(idle, VIEW_W - 40, 200);
+    lv_obj_align(idle, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(idle, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(idle, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *head = lv_label_create(idle);
+
+    lv_obj_set_style_text_font(head, &sony_22, LV_PART_MAIN);
+    lv_obj_set_style_text_color(head, TC(text_soft), LV_PART_MAIN);
+    lv_label_set_text(head, "Waiting for the next chart");
+    lv_obj_align(head, LV_ALIGN_TOP_MID, 0, 6);
+
+    idle_what = lv_label_create(idle);
+    lv_obj_set_style_text_font(idle_what, &sony_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(idle_what, TC(text), LV_PART_MAIN);
+    lv_obj_align(idle_what, LV_ALIGN_TOP_MID, 0, 48);
+
+    idle_when = lv_label_create(idle);
+    lv_obj_set_style_text_font(idle_when, &sony_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(idle_when, TC(text_head), LV_PART_MAIN);
+    lv_obj_align(idle_when, LV_ALIGN_TOP_MID, 0, 94);
+
+    idle_then = lv_label_create(idle);
+    lv_obj_set_style_text_font(idle_then, &sony_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(idle_then, TC(text_soft), LV_PART_MAIN);
+    lv_obj_set_width(idle_then, VIEW_W - 40);
+    lv_obj_set_style_text_align(idle_then, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_long_mode(idle_then, LV_LABEL_LONG_DOT);
+    lv_obj_align(idle_then, LV_ALIGN_TOP_MID, 0, 150);
+    lv_label_set_text(idle_what, "");
+    lv_label_set_text(idle_when, "");
+    lv_label_set_text(idle_then, "");
+}
+
 static void view_timer_cb(lv_timer_t *t)
 {
     (void)t;
+    if (idle && store_n && !lv_obj_has_flag(idle, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_add_flag(idle, LV_OBJ_FLAG_HIDDEN);     /* the chart coming in shows at once */
 
 
     if (frame.head_left)
@@ -1370,9 +1400,7 @@ static void view_timer_cb(lv_timer_t *t)
     if (shown_n < VIEW_H)
         shown_n++;
 
-    /* with the browser open the history goes on, the drawing waits for it to close */
-    if (!br_open)
-        draw_live();        /* all rows: Tilt depends on the distance from the newest */
+    draw_live();            /* all rows: Tilt depends on the distance from the newest */
 }
 
 /* ---- view ---- */
@@ -1430,9 +1458,7 @@ static void apply_view(void)
 }
 
 /* The status line: what the buttons and the MFK do where the app is */
-#define HINT_RX     "Page 2: Freq., View   Page 3: Align, Tilt (MFK)"
-#define HINT_LIST   "MFK: choose a fax   press: open it"
-#define HINT_PIC    "Fix Align, Fix Tilt, then the MFK   Done saves"
+#define HINT_RX     "Page 2: Freq., View   Page 3: Align, Tilt   Page 4: Night"
 
 static void hint(const char *text)
 {
@@ -1507,6 +1533,7 @@ static void app_open(lv_obj_t *parent)
 
     app_frame_create(&frame, dialog.obj);
     hint(HINT_RX);
+    idle_create();
 
     /* the canvas takes the keys: the main screen's key handler is off while a dialog is open */
     lv_group_add_obj(keyboard_group, canvas);
@@ -1551,20 +1578,12 @@ static void app_close(void)
     btn_plan.mark = false;
     snprintf(plan_btn, sizeof(plan_btn), "Auto\nPlan");
     plan_next[0] = '\0';
-    if (browser_save_timer) {
-        lv_timer_del(browser_save_timer);
-        browser_save_timer = NULL;
-    }
-    if (browser_tilt_timer) {
-        lv_timer_del(browser_tilt_timer);
-        browser_tilt_timer = NULL;
-    }
 
     align_on = tilt_on = false;
     wefax_bulletin_close();
     wefax_viewer_close();       /* after the Bulletin: its close gives back nothing then */
-    browser_close();
     canvas          = NULL;
+    idle            = NULL;
     viewport        = NULL;
     panel           = NULL;
     frame.head_left = NULL;     /* deleted with the dialog */
@@ -1616,19 +1635,7 @@ static void app_key_cb(lv_event_t *e)
 
     bool left = key == LV_KEY_LEFT;
 
-    if (br_align_on && br_editing) {
-        br_align += left ? -8 : 8;
-        while (br_align < -(int)(pic_w / 2))
-            br_align += (int)pic_w;
-        while (br_align > (int)(pic_w / 2))
-            br_align -= (int)pic_w;
-    } else if (br_tilt_on && br_editing) {
-        br_tilt += left ? -1 : 1;
-        if (br_tilt < -400)
-            br_tilt = -400;
-        if (br_tilt > 400)
-            br_tilt = 400;
-    } else if (align_on) {
+    if (align_on) {
         mfk_update(left ? -8 : 8);
         buttons_refresh(&btn_align);
         draw_live();
@@ -1638,383 +1645,12 @@ static void app_key_cb(lv_event_t *e)
         buttons_refresh(&btn_tilt);
         draw_live();
         return;
-    } else {
-        return;
-    }
-    draw_picture();
-    {
-        char msg[24];
-
-        snprintf(msg, sizeof(msg), br_align_on ? "Align %+d" : "Tilt %+d", br_align_on ? br_align : br_tilt);
-        channel_overlay_show(msg);
-    }
-
-    /* the browser picture differs from its file only with a correction: Done becomes Save */
-    br_modified    = br_align || br_tilt;
-    btn_done.label = br_modified ? "Save\nFax" : "Done";
-    if (btn_done.disp_btn)
-        buttons_refresh(&btn_done);
-}
-
-/* ---- browser ---- */
-
-static int newest_first(const void *a, const void *b)
-{
-    return strcmp(*(const char *const *)b, *(const char *const *)a);
-}
-
-static void files_free(void)
-{
-    for (unsigned i = 0; i < files_n; i++) {
-        free(files[i]);
-        files[i] = NULL;
-    }
-    files_n = 0;
-}
-
-/* wefax-*.png in SAVE_DIR, newest first */
-static void files_read(void)
-{
-    files_free();
-
-    DIR *dir = opendir(SAVE_DIR);
-
-    if (!dir)
-        return;
-
-    struct dirent *de;
-    char         **all = NULL;
-    unsigned       n = 0, size = 0;
-
-    /* all of them, then the newest: Auto Plan saves dozens a day */
-    while ((de = readdir(dir))) {
-        size_t len = strlen(de->d_name);
-
-        if (len < 5 || strcmp(de->d_name + len - 4, ".png") || strncmp(de->d_name, "wefax-", 6))
-            continue;
-        if (n == size) {
-            char **more = realloc(all, (size ? size * 2 : 256) * sizeof(*all));
-
-            if (!more)
-                break;
-            all  = more;
-            size = size ? size * 2 : 256;
-        }
-        if ((all[n] = strdup(de->d_name)))
-            n++;
-    }
-    closedir(dir);
-    if (all)
-        qsort(all, n, sizeof(all[0]), newest_first);
-    for (unsigned i = 0; i < n; i++)
-        if (files_n < BROWSER_FILES)
-            files[files_n++] = all[i];
-        else
-            free(all[i]);
-    free(all);
-}
-
-/* Page 3 buttons: on a picture Fix Align, Fix Tilt and Done/Save; on the list F5 deletes */
-static void browser_buttons(bool picture)
-{
-    if (picture) {
-        br_modified    = br_align || br_tilt;
-        btn_done.label = br_modified ? "Save\nFax" : "Done";
-        if (btn_done.disp_btn)
-            buttons_refresh(&btn_done);
-        buttons_disabled(&btn_fix_align, false);
-        buttons_disabled(&btn_fix_tilt, false);
-        buttons_disabled(&btn_done, false);
-        return;
-    }
-
-    br_modified    = false;
-    btn_done.label = "Delete\nFax";
-    buttons_disabled(&btn_fix_align, true);
-    buttons_disabled(&btn_fix_tilt, true);
-    buttons_disabled(&btn_done, files_n == 0);
-    if (btn_done.disp_btn)
-        buttons_refresh(&btn_done);
-}
-
-/* The list's rows: every fax, newest first; each row a file (its index in files) or -1 (none saved) */
-#define TABLE_ROWS  (BROWSER_FILES + 1)
-
-static int      row_file[TABLE_ROWS];
-static unsigned rows_n;
-
-static void table_row(const char *text, int file)
-{
-    lv_table_set_cell_value(table, rows_n, 0, text);
-    row_file[rows_n++] = file;
-}
-
-static void table_fill(void)
-{
-    if (!table)
-        return;
-
-    rows_n = 0;
-    lv_table_set_row_cnt(table, files_n ? files_n : 1);
-    if (!files_n)
-        table_row("No saved faxes", -1);
-    for (unsigned i = 0; i < files_n; i++)
-        table_row(files[i], (int)i);
-    lv_obj_invalidate(table);
-}
-
-/* The file of the row selected in the list, or -1 */
-static int table_selected(void)
-{
-    uint16_t row = LV_TABLE_CELL_NONE, col = LV_TABLE_CELL_NONE;
-
-    if (!table || !files_n)
-        return -1;
-    lv_table_get_selected_cell(table, &row, &col);
-    return row == LV_TABLE_CELL_NONE || row >= rows_n ? -1 : row_file[row];
-}
-
-static void table_focus(void)
-{
-    lv_group_add_obj(keyboard_group, table);
-    lv_group_focus_obj(table);
-    lv_group_set_editing(keyboard_group, true);
-}
-
-static void picture_free(void)
-{
-    free(pic);
-    pic         = NULL;
-    pic_w       = 0;
-    pic_h       = 0;
-    pic_path[0] = '\0';
-    br_editing  = false;
-    br_align_on = false;
-    br_tilt_on  = false;
-    br_align    = 0;
-    br_tilt     = 0;
-    br_modified = false;
-}
-
-/* Any PNG in SAVE_DIR, as 8-bit grey */
-static bool picture_open(const char *name)
-{
-    char path[256];
-
-    snprintf(path, sizeof(path), "%s/%s", SAVE_DIR, name);
-
-    unsigned w, h;
-    uint8_t *img = wefax_png_read_grey(path, &w, &h);
-
-    if (!img)
-        return false;
-
-    picture_free();
-    pic_gen++;
-    pic   = img;
-    pic_w = w;
-    pic_h = h;
-    snprintf(pic_path, sizeof(pic_path), "%s", path);
-    draw_picture();
-
-    if (table) {
-        lv_group_remove_obj(table);
-        lv_obj_add_flag(table, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (canvas) {
-        lv_obj_clear_flag(canvas, LV_OBJ_FLAG_HIDDEN);
-        focus_canvas();
-        apply_view();
-        lv_obj_invalidate(canvas);
-    }
-    br_editing = true;
-    browser_buttons(true);
-    buttons_load_page(&page_br_pic);
-    hint(HINT_PIC);
-    printf("WEFAX: opened %s (%u x %u)\n", path, pic_w, pic_h);
-    return true;
-}
-
-static void table_pressed_cb(lv_event_t *e)
-{
-    (void)e;
-
-    int i = table_selected();
-
-    if (i >= 0 && picture_open(files[i]))
-        channel_overlay_show("Editing saved fax");
-}
-
-static void browser_open(void)
-{
-    if (br_open)
-        return;
-
-    files_read();
-    browser_buttons(false);
-    if (canvas) {
-        lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
-        lv_group_remove_obj(canvas);
-    }
-    if (panel && view == VIEW_SMALL) {     /* Big/Full: the common look has no panel */
-        lv_obj_clear_flag(panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_background(panel);
-    }
-
-    table = lv_table_create(dialog.obj);
-    if (view == VIEW_SMALL) {
-        lv_obj_set_size(table, VIEW_W, 142);
-        lv_obj_align(table, LV_ALIGN_TOP_MID, 0, 20);
-    } else {
-        lv_obj_set_size(table, VIEW_W, APP_FRAME_BODY_H - 16);
-        lv_obj_set_pos(table, APP_FRAME_X + (APP_FRAME_W - VIEW_W) / 2, APP_FRAME_BODY_Y + 8);
-    }
-    lv_table_set_col_cnt(table, 1);
-    lv_table_set_col_width(table, 0, VIEW_W - 10);
-    lv_obj_set_style_border_width(table, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(table, TC(bg), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(table, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(table, 0, LV_PART_ITEMS);
-    lv_obj_set_style_bg_opa(table, LV_OPA_TRANSP, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(table, TC(text), LV_PART_ITEMS);
-    lv_obj_set_style_text_font(table, &sony_24, LV_PART_ITEMS);
-    lv_obj_set_style_pad_top(table, 5, LV_PART_ITEMS);
-    lv_obj_set_style_pad_bottom(table, 5, LV_PART_ITEMS);
-    lv_obj_set_style_pad_left(table, 12, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(table, TC(text_mute), LV_PART_ITEMS | LV_STATE_EDITED);
-    lv_obj_set_style_bg_opa(table, LV_OPA_TRANSP, LV_PART_ITEMS | LV_STATE_EDITED);
-    table_fill();
-    lv_obj_add_event_cb(table, table_pressed_cb, LV_EVENT_PRESSED, NULL);
-    table_focus();
-
-    br_open = true;
-    browser_buttons(false);
-    buttons_load_page(&page_br_list);
-    hint(HINT_LIST);
-}
-
-static void browser_close(void)
-{
-    if (table) {
-        lv_group_remove_obj(table);
-        lv_obj_del(table);
-        table = NULL;
-    }
-    files_free();
-    browser_buttons(false);
-    picture_free();
-    if (br_open)
-        hint(HINT_RX);
-    br_open = false;
-
-    btn_done.label = "Done";
-
-    /* the live fax back over the picture, with the current layout */
-    draw_live();
-    if (canvas) {
-        lv_obj_clear_flag(canvas, LV_OBJ_FLAG_HIDDEN);
-        apply_view();
-        focus_canvas();
-        lv_obj_invalidate(dialog.obj);
-        lv_obj_invalidate(canvas);
-    }
-}
-
-/* From a picture back to the list */
-static void browser_list(void)
-{
-    browser_buttons(false);
-    buttons_load_page(&page_br_list);
-    hint(HINT_LIST);
-    if (canvas) {
-        lv_group_remove_obj(canvas);
-        lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
-    }
-    picture_free();
-    files_read();
-    if (table) {
-        lv_obj_clear_flag(table, LV_OBJ_FLAG_HIDDEN);
-        table_fill();
-        browser_buttons(false);
-        table_focus();
-        lv_obj_invalidate(table);
-    }
-}
-
-static void browser_delete(void)
-{
-    if (!br_open || br_editing)
-        return;
-
-    int i = table_selected();
-
-    if (i < 0)
-        return;
-
-    char path[256];
-
-    snprintf(path, sizeof(path), "%s/%s", SAVE_DIR, files[i]);
-    if (unlink(path) != 0) {
-        printf("WEFAX: can't delete %s: %s\n", path, strerror(errno));
-        return;
-    }
-    printf("WEFAX: deleted %s\n", path);
-    wefax_preview_remove(SAVE_DIR, files[i]);
-
-    /* same table: the selection stays on the row, now the next fax (LVGL 8 can't set it) */
-    files_read();
-    table_fill();
-    browser_buttons(false);
-    lv_group_focus_obj(table);
-    lv_group_set_editing(keyboard_group, true);
-}
-
-/* The corrected picture over its own file: a temporary file renamed once complete */
-static bool picture_save(void)
-{
-    if (!pic || !pic_w || !pic_h || !pic_path[0])
-        return false;
-
-    char  tmp[sizeof(pic_path) + 8];
-    FILE *fp;
-
-    snprintf(tmp, sizeof(tmp), "%s.tmp", pic_path);
-    if (!(fp = fopen(tmp, "wb"))) {
-        printf("WEFAX: can't write %s: %s\n", tmp, strerror(errno));
-        return false;
-    }
-
-    bool ok = png_write_fixed(fp, pic, pic_w, pic_h, br_align, br_tilt);
-
-    if (fclose(fp) != 0 || !ok) {
-        remove(tmp);
-        printf("WEFAX: writing %s failed\n", tmp);
-        return false;
-    }
-    if (rename(tmp, pic_path) != 0) {
-        remove(tmp);
-        printf("WEFAX: can't rename %s: %s\n", tmp, strerror(errno));
-        return false;
-    }
-    printf("WEFAX: saved %s (%u x %u), align %d tilt %d\n", pic_path, pic_w, pic_h, br_align, br_tilt);
-    preview_later(strrchr(pic_path, '/') + 1);
-    return true;
-}
-
-static void picture_save_timer_cb(lv_timer_t *t)
-{
-    lv_timer_del(t);
-    browser_save_timer = NULL;
-
-    if (br_open && br_editing && pic && picture_save()) {
-        browser_list();
-        channel_overlay_show("Fax saved");
     }
 }
 
 /* ---- buttons ---- */
 
-/* The Bulletin away, the keys back to the picture */
+/* The tiles away, the keys back to the picture */
 static void bulletin_hide(void)
 {
     if (!wefax_bulletin_is_open())
@@ -2022,13 +1658,14 @@ static void bulletin_hide(void)
     wefax_bulletin_close();
     if (canvas)
         focus_canvas();
+    idle_update();
 }
 
 static void page_1_cb(button_data_t *data)
 {
     (void)data;
+    wefax_viewer_close();
     bulletin_hide();
-    browser_close();
     align_on = tilt_on = false;
     buttons_load_page(&page_1);
 }
@@ -2037,7 +1674,6 @@ static void page_2_cb(button_data_t *data)
 {
     (void)data;
     bulletin_hide();
-    browser_close();
     buttons_load_page(&page_2);
 }
 
@@ -2045,17 +1681,15 @@ static void page_3_cb(button_data_t *data)
 {
     (void)data;
     bulletin_hide();
-    browser_close();
     align_on = tilt_on = false;
     buttons_load_page(&page_3);
 }
 
-/* A fax open: back to the list, its corrections not saved */
-static void br_back_cb(button_data_t *data)
+static void page_4_cb(button_data_t *data)
 {
     (void)data;
-    if (br_open && br_editing)
-        browser_list();
+    align_on = tilt_on = false;
+    buttons_load_page(&page_4);
 }
 
 /* The chart Auto Plan is taking, for its tile */
@@ -2075,31 +1709,31 @@ static void bulletin_live(wefax_bulletin_live_t *out)
     out->row      = store_row;
 }
 
-/* Fix Chart: the fax browser on the chart, its Fix Align and Fix Tilt */
-static void bulletin_zoom(const char *name)
+/* The buttons of where the tiles are: the tiles of one or the other, a chart large */
+static void tiles_buttons(void)
 {
-    char file[96];
+    static buttons_page_t *shown_page;
+    buttons_page_t        *want;
 
-    snprintf(file, sizeof(file), "%s", name);      /* name goes with the Bulletin */
-    bulletin_hide();
-    if (br_open)
-        browser_close();
-    browser_open();
-    for (unsigned i = 0; i < files_n; i++)
-        if (!strcmp(files[i], file)) {
-            if (picture_open(files[i]))
-                channel_overlay_show("Editing saved fax");
-            break;
-        }
+    if (!wefax_bulletin_is_open() || wefax_viewer_is_open())
+        return;
+    want = wefax_bulletin_one() ? &page_chart : wefax_bulletin_mode() == WEFAX_TILES_ALL ? &page_all : &page_bul;
+    btn_chart_page.label = wefax_bulletin_mode() == WEFAX_TILES_ALL ? "(All Charts)" : "(Bulletin)";
+    if (want != shown_page || buttons_get_cur_page() != want) {
+        shown_page = want;
+        buttons_load_page(want);
+    }
+    buttons_mark(&btn_delete, wefax_bulletin_delete_armed());
+    buttons_refresh(&btn_delete);
 }
 
-/* The viewer gone: the Bulletin's buttons and keys back */
+/* The viewer gone: the tiles' buttons and keys back, a chart saved there shown again */
 static void viewer_closed(void)
 {
     if (!wefax_bulletin_is_open())
         return;
-    buttons_load_page(&page_bul);
     wefax_bulletin_focus();
+    tiles_buttons();
 }
 
 static void viewer_back_cb(button_data_t *data)
@@ -2108,23 +1742,21 @@ static void viewer_back_cb(button_data_t *data)
     wefax_viewer_close();
 }
 
-static void bulletin_view(const char *name, const char *title)
+static void tiles_view(const char *name, const char *title, bool fix)
 {
-    if (wefax_viewer_open(SAVE_DIR, name, title, viewer_closed))
-        buttons_load_page(&page_viewer);
+    if (wefax_viewer_open(SAVE_DIR, name, title, fix, viewer_closed))
+        buttons_load_page(fix ? &page_fix : &page_viewer);
+    else
+        channel_overlay_show("Can't read this chart");
 }
 
-static void bulletin_changed(void)
+static void tiles_back_void(void)
 {
-    buttons_refresh(&btn_bul_open);
-    buttons_refresh(&btn_bul_back);
+    page_1_cb(NULL);
 }
 
-/* Bulletin: each kind of chart as a tile (wefax_bulletin.h), over the picture in the Big view */
-static void bulletin_cb(button_data_t *data)
+static void tiles_open(wefax_tiles_mode_t mode)
 {
-    (void)data;
-    browser_close();
     align_on = tilt_on = false;
     if (view == VIEW_SMALL) {
         view           = VIEW_BIG;
@@ -2135,44 +1767,115 @@ static void bulletin_cb(button_data_t *data)
         lv_group_remove_obj(canvas);
 
     wefax_bulletin_cbs_t cbs = {.live       = bulletin_live,
-                                .open_file  = bulletin_zoom,
                                 .other_keys = app_key_cb,
-                                .changed    = bulletin_changed,
-                                .view_file  = bulletin_view};
+                                .changed    = tiles_buttons,
+                                .view_file  = tiles_view,
+                                .back       = tiles_back_void};
 
-    wefax_bulletin_open(dialog.obj, &cbs);
-    buttons_load_page(&page_bul);
+    wefax_bulletin_open(dialog.obj, mode, &cbs);
+    tiles_buttons();
 }
 
-static const char *bul_open_label(void)
-{
-    return wefax_bulletin_one() ? "Fix\nChart" : "Open\nChart";
-}
-
-static void bul_open_cb(button_data_t *data)
+/* Bulletin: each kind of chart as a tile (wefax_bulletin.h), over the picture in the Big view */
+static void bulletin_cb(button_data_t *data)
 {
     (void)data;
-    if (wefax_bulletin_one())
-        wefax_bulletin_fix();
-    else
-        wefax_bulletin_enter();
+    bulletin_hide();
+    tiles_open(WEFAX_TILES_BULLETIN);
 }
 
-static const char *bul_back_label(void)
-{
-    return wefax_bulletin_one() ? "All\nKinds" : "All\nFaxes";
-}
-
-/* Large: back to the tiles; tiles: the list of every fax */
-static void bul_back_cb(button_data_t *data)
+/* All Charts: every chart saved, newest first */
+static void all_charts_cb(button_data_t *data)
 {
     (void)data;
-    if (wefax_bulletin_one()) {
-        wefax_bulletin_back();
+    bulletin_hide();
+    tiles_open(WEFAX_TILES_ALL);
+}
+
+static void tiles_open_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_bulletin_enter();
+}
+
+static void tiles_newest_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_bulletin_newest();
+}
+
+static const char *tiles_delete_label(void)
+{
+    return wefax_bulletin_delete_armed() ? "Delete?\npress again" : "Delete";
+}
+
+static void tiles_delete_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_bulletin_delete();
+}
+
+/* F5: a chart back to the tiles, the tiles back to the fax */
+static void tiles_back_cb(button_data_t *data)
+{
+    (void)data;
+    if (!wefax_bulletin_back())
+        page_1_cb(NULL);
+}
+
+static void chart_full_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_bulletin_enter();
+}
+
+/* Fix: from the large view over the whole screen straight into Fix; from the full screen, Fix there */
+static void chart_fix_cb(button_data_t *data)
+{
+    (void)data;
+    if (wefax_viewer_is_open()) {
+        wefax_viewer_fix();
+        buttons_load_page(&page_fix);
         return;
     }
-    bulletin_hide();
-    browser_open();
+    wefax_bulletin_fix();
+}
+
+static void fix_auto_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_viewer_auto_tilt();
+}
+
+static void fix_undo_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_viewer_undo();
+}
+
+static void fix_cancel_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_viewer_cancel();
+}
+
+static void fix_save_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_viewer_save();
+}
+
+static const char *night_label(void)
+{
+    return wefax_night_label();
+}
+
+static void night_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_night_next();
+    buttons_refresh(&btn_night);
+    draw_live();
 }
 
 static void close_cb(button_data_t *data)
@@ -2294,168 +1997,6 @@ static void save_cb(button_data_t *data)
         fax_on   = false;
         clear_fax();
     }
-}
-
-static void browser_cb(button_data_t *data)
-{
-    (void)data;
-    bulletin_hide();
-    if (!br_open)
-        browser_open();
-}
-
-static void fix_align_cb(button_data_t *data)
-{
-    (void)data;
-    if (!br_open || !br_editing || !pic)
-        return;
-    br_align_on = true;
-    br_tilt_on  = false;
-    align_on = tilt_on = false;
-    if (canvas) {
-        lv_group_focus_obj(canvas);
-        lv_group_set_editing(keyboard_group, true);
-    }
-}
-
-/* Auto Tilt off the LVGL thread: the search takes the radio seconds, while a fax may be coming in row by row.
- * The worker has its own copy of the picture; the timer takes its result if the same picture is still open. */
-typedef struct {
-    uint8_t *img;
-    unsigned w, h;
-    unsigned gen;
-} tilt_job_t;
-
-static pthread_mutex_t tilt_lock = PTHREAD_MUTEX_INITIALIZER;
-static bool            tilt_busy, tilt_done, tilt_ok;
-static int             tilt_found;
-static unsigned        tilt_gen;
-
-static void *tilt_worker(void *arg)
-{
-    tilt_job_t *job = arg;
-    int         t   = 0;
-    bool        ok  = wefax_auto_tilt(job->img, job->w, job->h, &t);
-
-    pthread_mutex_lock(&tilt_lock);
-    tilt_found = t;
-    tilt_ok    = ok;
-    tilt_gen   = job->gen;
-    tilt_done  = true;
-    tilt_busy  = false;
-    pthread_mutex_unlock(&tilt_lock);
-    free(job->img);
-    free(job);
-    return NULL;
-}
-
-static void auto_tilt_timer_cb(lv_timer_t *t)
-{
-    char msg[48];
-    bool done, ok;
-    int  found;
-    unsigned gen;
-
-    pthread_mutex_lock(&tilt_lock);
-    done      = tilt_done;
-    ok        = tilt_ok;
-    found     = tilt_found;
-    gen       = tilt_gen;
-    tilt_done = false;
-    pthread_mutex_unlock(&tilt_lock);
-    if (!done)
-        return;
-    lv_timer_del(t);
-    browser_tilt_timer = NULL;
-    if (!br_open || !br_editing || !pic || br_tilt || gen != pic_gen)
-        return;     /* another picture, or touched up meanwhile */
-    if (!ok) {
-        channel_overlay_show("Auto Tilt: no clear tilt, MFK to set it");
-        return;
-    }
-    br_tilt = found;
-    draw_picture();
-    browser_buttons(true);
-    snprintf(msg, sizeof(msg), "Auto Tilt %+d, MFK to adjust", br_tilt);
-    channel_overlay_show(msg);
-}
-
-static void auto_tilt_start(void)
-{
-    tilt_job_t *job = malloc(sizeof(*job));
-    pthread_t   th;
-
-    pthread_mutex_lock(&tilt_lock);
-    bool busy = tilt_busy;
-    pthread_mutex_unlock(&tilt_lock);
-    if (busy || !job || !(job->img = malloc((size_t)pic_w * pic_h))) {
-        free(job);
-        return;
-    }
-    memcpy(job->img, pic, (size_t)pic_w * pic_h);
-    job->w   = pic_w;
-    job->h   = pic_h;
-    job->gen = pic_gen;
-    pthread_mutex_lock(&tilt_lock);
-    tilt_busy = true;
-    tilt_done = false;
-    pthread_mutex_unlock(&tilt_lock);
-    if (pthread_create(&th, NULL, tilt_worker, job) != 0) {
-        pthread_mutex_lock(&tilt_lock);
-        tilt_busy = false;
-        pthread_mutex_unlock(&tilt_lock);
-        free(job->img);
-        free(job);
-        return;
-    }
-    pthread_detach(th);
-    channel_overlay_show("Auto Tilt...");
-    browser_tilt_timer = lv_timer_create(auto_tilt_timer_cb, 100, NULL);
-}
-
-static void fix_tilt_cb(button_data_t *data)
-{
-    (void)data;
-    if (!br_open || !br_editing || !pic)
-        return;
-    br_tilt_on  = true;
-    br_align_on = false;
-    align_on = tilt_on = false;
-
-    /* from the tilt that straightens it, the MFK only touches it up; the overlay first, the search takes the radio
-     * a few seconds */
-    if (!br_tilt && !browser_tilt_timer)
-        auto_tilt_start();
-    if (canvas) {
-        lv_group_focus_obj(canvas);
-        lv_group_set_editing(keyboard_group, true);
-    }
-}
-
-/* F5 of the browser: Delete on the list; on a picture Done, or Save with a correction */
-static void done_cb(button_data_t *data)
-{
-    (void)data;
-
-    if (br_open && !br_editing) {
-        browser_delete();
-        return;
-    }
-    if (!br_open || !br_editing || !pic)
-        return;
-
-    br_modified = br_align || br_tilt;
-    if (!br_modified) {
-        browser_buttons(true);
-        browser_list();
-        return;
-    }
-    if (browser_save_timer)
-        return;
-
-    /* the overlay first: the PNG is written on the next timer pass */
-    channel_overlay_show("Saving fax...");
-    browser_save_timer = lv_timer_create(picture_save_timer_cb, 50, NULL);
 }
 
 bool wefax_window_remote(wefax_rc_t what)

@@ -21,6 +21,10 @@ extern "C" {
 /* Any PNG as 8-bit grey (malloc'ed, w x h), NULL if it can't be read */
 uint8_t *wefax_png_read_grey(const char *path, unsigned *w, unsigned *h);
 
+/* img (w x h grey) written as a grey PNG with Align (px) and Tilt (wefax/tilt.h's unit) applied, as the app shows
+ * them: the newest row stays, each older one shifts. Into path.part, then renamed: never half a chart there */
+bool wefax_png_write_fixed(const char *path, const uint8_t *img, unsigned w, unsigned h, int align, int tilt);
+
 /* The preview of the chart dir/name (name: wefax-....png) made from its file, or removed */
 bool wefax_preview_make(const char *dir, const char *name);
 void wefax_preview_remove(const char *dir, const char *name);
