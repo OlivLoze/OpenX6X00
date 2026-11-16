@@ -1,0 +1,33 @@
+/*
+ *  SPDX-License-Identifier: LGPL-2.1-or-later
+ *
+ *  Xiegu X6100 LVGL GUI - WeFax: the saved charts read back, and their previews. A preview is the whole chart at
+ *  most WEFAX_PREVIEW_W x WEFAX_PREVIEW_H, grey, in SAVE_DIR/thumbs/<name>.prv: the Bulletin draws from it, a
+ *  2 MB PNG takes the radio too long to read for eight tiles.
+ */
+
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define WEFAX_PREVIEW_W 400
+#define WEFAX_PREVIEW_H 294
+
+/* Any PNG as 8-bit grey (malloc'ed, w x h), NULL if it can't be read */
+uint8_t *wefax_png_read_grey(const char *path, unsigned *w, unsigned *h);
+
+/* The preview of the chart dir/name (name: wefax-....png) made from its file, or removed */
+bool wefax_preview_make(const char *dir, const char *name);
+void wefax_preview_remove(const char *dir, const char *name);
+
+/* The preview of dir/name (malloc'ed, w x h), NULL when there is none yet */
+uint8_t *wefax_preview_load(const char *dir, const char *name, unsigned *w, unsigned *h);
+
+#ifdef __cplusplus
+}
+#endif

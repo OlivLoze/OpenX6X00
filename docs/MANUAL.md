@@ -3546,12 +3546,20 @@ before the chart starts. The button shows the next slot, the header too.
   from noise, on noise it waits for the next start. Its top is missing and,
   its phasing missed, it can sit sideways (Fix Align in the browser); a full
   copy of the chart replaces it when one comes in.
-- Bulletin (page 4) opens the Fax Browser on the Bulletin: for each kind of
-  chart (analysis, forecasts at 24 h, 36-48 h and 3-5 days, sea and swell,
-  wind, significant weather, rain and visibility, ice) its newest copy, when
-  it was saved and its mark, and when the plan has the next one. A row with a
-  copy opens it; the whole list of faxes follows. The web WeFax page shows the
-  same Bulletin with the pictures.
+- Bulletin (page 4) shows each kind of chart (analysis, forecasts at 24 h,
+  36-48 h and 3-5 days, sea and swell, wind, significant weather, rain and
+  visibility, ice) as a tile, eight a page: its newest copy, how old it is
+  (the dot green under 6 h, orange under 24 h, red older) and its mark; a kind
+  with no copy yet says when the plan has the next one, and the chart coming
+  in draws in its tile ("receiving 40 %"). The MFK picks a tile, its press
+  (or Open Chart) shows it large: the whole chart, its station and frequency,
+  when it was taken, its mark and the next one; the MFK goes through the
+  kinds there, All Kinds goes back to the tiles. Fix Chart (or the press)
+  opens it in the Fax Browser for Fix Align and Fix Tilt; All Faxes is the
+  Browser's list of every fax. The tiles come from a small preview of each
+  chart in `/mnt/wefax/thumbs`, made when it is saved; a chart saved before
+  gets one the first time it is shown ("preparing" a few seconds). The web
+  WeFax page shows the same Bulletin.
 - The plan is in the firmware (tools/wefax_plan/plan.json, from a 48 h watch in
   November 2026, made for western Europe); a `/mnt/wefax/plan.json` of the same
   form replaces it, its "bulletin" too (the kinds of chart and the products in

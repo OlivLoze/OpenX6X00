@@ -10,11 +10,13 @@
 #include "screen_main.h"
 #include "board.h"
 #include "wefax_window.h"
+#include "wefax_bulletin.h"
 #include "freq_list.h"
 #include "wefax/decoder.h"
 #include "wefax/encoder.h"
 #include "wefax/plan.h"
 #include "wefax/quality.h"
+#include "wefax/thumb.h"
 #include "tx_player.h"
 #include "msg_box.h"
 #include "audio.h"
@@ -88,6 +90,10 @@ static void fix_tilt_cb(button_data_t *data);
 static void done_cb(button_data_t *data);
 static void plan_cb(button_data_t *data);
 static void bulletin_cb(button_data_t *data);
+static void bul_open_cb(button_data_t *data);
+static const char *bul_open_label(void);
+static void bul_back_cb(button_data_t *data);
+static const char *bul_back_label(void);
 static const char *plan_label(void);
 
 static void browser_close(void);
@@ -211,6 +217,13 @@ static buttons_page_t page_1 = {.items = {&btn_page_1, &btn_freq, &btn_rx_mode, 
 static buttons_page_t page_2 = {.items = {&btn_page_2, &btn_align, &btn_tilt, &btn_view, &btn_save}};
 static buttons_page_t page_3 = {.items = {&btn_page_3, &btn_browser, &btn_fix_align, &btn_fix_tilt, &btn_done}};
 static buttons_page_t page_4 = {.items = {&btn_page_4, &btn_plan, &btn_bulletin, &btn_dig_pwr}};
+
+/* While the Bulletin shows: its tiles, one of them large */
+static button_data_t btn_bul_page  = {.type = BTN_TEXT, .label = "(FAX 4:4)", .press = page_1_cb};
+static button_data_t btn_bul_open  = {.type = BTN_TEXT_FN, .label_fn = bul_open_label, .press = bul_open_cb};
+static button_data_t btn_bul_back  = {.type = BTN_TEXT_FN, .label_fn = bul_back_label, .press = bul_back_cb};
+static button_data_t btn_bul_close = {.type = BTN_TEXT, .label = "Close\nBulletin", .press = page_4_cb};
+static buttons_page_t page_bul = {.items = {&btn_bul_page, &btn_plan, &btn_bul_open, &btn_bul_back, &btn_bul_close}};
 
 /* Frequency and mode come back when the app closes */
 static dialog_t dialog = {
@@ -650,8 +663,10 @@ static int copies(const char *product, time_t when, const char *keep, bool drop)
             char path[300];
 
             snprintf(path, sizeof(path), SAVE_DIR "/%s", de->d_name);
-            if (remove(path) == 0)
+            if (remove(path) == 0) {
+                wefax_preview_remove(SAVE_DIR, de->d_name);
                 printf("WEFAX PLAN: %s dropped, a better copy came in\n", de->d_name);
+            }
         } else if (q > best) {
             best = q;
         }
@@ -699,6 +714,7 @@ static void *save_worker(void *arg)
         base = base ? base + 1 : path;
         if (best >= 0)
             copies(job->product, job->when, base, true);   /* the worse copies of this chart go */
+        wefax_preview_make(SAVE_DIR, base);                 /* for the Bulletin */
         pthread_mutex_lock(&rstat_lock);
         snprintf(rstat.saved, sizeof(rstat.saved), "%s", base);
         rstat.saves++;
@@ -1465,6 +1481,7 @@ static void app_close(void)
     }
 
     align_on = tilt_on = false;
+    wefax_bulletin_close();
     browser_close();
     canvas          = NULL;
     viewport        = NULL;
@@ -1777,84 +1794,11 @@ static bool picture_open(const char *name)
 
     snprintf(path, sizeof(path), "%s/%s", SAVE_DIR, name);
 
-    FILE *fp = fopen(path, "rb");
+    unsigned w, h;
+    uint8_t *img = wefax_png_read_grey(path, &w, &h);
 
-    if (!fp) {
-        printf("WEFAX: can't open %s: %s\n", path, strerror(errno));
+    if (!img)
         return false;
-    }
-
-    png_structp png  = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    png_infop   info = png ? png_create_info_struct(png) : NULL;
-    uint8_t *volatile img = NULL, *volatile line = NULL;      /* freed after a longjmp */
-
-    if (!png || !info) {
-        png_destroy_read_struct(&png, info ? &info : NULL, NULL);
-        fclose(fp);
-        return false;
-    }
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_read_struct(&png, &info, NULL);
-        fclose(fp);
-        free(img);
-        free(line);
-        printf("WEFAX: %s is not a readable PNG\n", path);
-        return false;
-    }
-
-    png_init_io(png, fp);
-    png_read_info(png, info);
-
-    png_uint_32 w = png_get_image_width(png, info), h = png_get_image_height(png, info);
-    int         depth = png_get_bit_depth(png, info), type = png_get_color_type(png, info);
-
-    if (!w || !h || w > 10000 || h > 10000) {
-        png_destroy_read_struct(&png, &info, NULL);
-        fclose(fp);
-        printf("WEFAX: %s: bad size\n", path);
-        return false;
-    }
-
-    /* everything to 8-bit RGB(A), then grey */
-    if (depth == 16)
-        png_set_strip_16(png);
-    if (type == PNG_COLOR_TYPE_PALETTE)
-        png_set_palette_to_rgb(png);
-    if (type == PNG_COLOR_TYPE_GRAY && depth < 8)
-        png_set_expand_gray_1_2_4_to_8(png);
-    if (png_get_valid(png, info, PNG_INFO_tRNS))
-        png_set_tRNS_to_alpha(png);
-    type = png_get_color_type(png, info);
-    if (type == PNG_COLOR_TYPE_GRAY || type == PNG_COLOR_TYPE_GRAY_ALPHA)
-        png_set_gray_to_rgb(png);
-    png_read_update_info(png, info);
-
-    size_t rowbytes = png_get_rowbytes(png, info);
-    int    ch       = png_get_channels(png, info);
-
-    img  = malloc((size_t)w * h);
-    line = malloc(rowbytes);
-    if (ch < 3 || !rowbytes || !img || !line) {
-        png_destroy_read_struct(&png, &info, NULL);
-        fclose(fp);
-        free(img);
-        free(line);
-        printf("WEFAX: %s: unsupported or no memory\n", path);
-        return false;
-    }
-
-    for (png_uint_32 y = 0; y < h; y++) {
-        png_read_row(png, line, NULL);
-        for (png_uint_32 x = 0; x < w; x++) {
-            const uint8_t *p = line + (size_t)x * ch;
-
-            img[(size_t)y * w + x] = (uint8_t)((77U * p[0] + 150U * p[1] + 29U * p[2]) >> 8);
-        }
-    }
-    png_read_end(png, NULL);
-    png_destroy_read_struct(&png, &info, NULL);
-    fclose(fp);
-    free(line);
 
     picture_free();
     pic   = img;
@@ -2004,6 +1948,7 @@ static void browser_delete(void)
         return;
     }
     printf("WEFAX: deleted %s\n", path);
+    wefax_preview_remove(SAVE_DIR, files[i]);
 
     /* same table: the selection stays on the row, now the next fax (LVGL 8 can't set it) */
     files_read();
@@ -2041,6 +1986,7 @@ static bool picture_save(void)
         return false;
     }
     printf("WEFAX: saved %s (%u x %u), align %d tilt %d\n", pic_path, pic_w, pic_h, br_align, br_tilt);
+    wefax_preview_make(SAVE_DIR, strrchr(pic_path, '/') + 1);
     return true;
 }
 
@@ -2057,9 +2003,20 @@ static void picture_save_timer_cb(lv_timer_t *t)
 
 /* ---- buttons ---- */
 
+/* The Bulletin away, the keys back to the picture */
+static void bulletin_hide(void)
+{
+    if (!wefax_bulletin_is_open())
+        return;
+    wefax_bulletin_close();
+    if (canvas)
+        focus_canvas();
+}
+
 static void page_1_cb(button_data_t *data)
 {
     (void)data;
+    bulletin_hide();
     browser_close();
     align_on = tilt_on = false;
     buttons_load_page(&page_1);
@@ -2068,6 +2025,7 @@ static void page_1_cb(button_data_t *data)
 static void page_2_cb(button_data_t *data)
 {
     (void)data;
+    bulletin_hide();
     browser_close();
     buttons_load_page(&page_2);
 }
@@ -2075,23 +2033,107 @@ static void page_2_cb(button_data_t *data)
 static void page_3_cb(button_data_t *data)
 {
     (void)data;
+    bulletin_hide();
     align_on = tilt_on = false;
     buttons_load_page(&page_3);
 }
 
-/* Page 4 Bulletin: the list of page 3 at its top, the Bulletin */
-static void bulletin_cb(button_data_t *data)
+/* The chart Auto Plan is taking, for its tile */
+static void bulletin_live(wefax_bulletin_live_t *out)
 {
-    (void)data;
+    if (!fax_on || fax_slot < 0 || !store_n)
+        return;
+
+    const wefax_slot_t *s = wefax_plan_slot(fax_slot);
+    long                p = s && s->dur ? (long)(time(NULL) - fax_t0) * 1000 / s->dur : 0;
+
+    if (!s)
+        return;
+    out->product  = s->product;
+    out->permille = p < 0 ? 0 : p > 999 ? 999 : (int)p;
+    out->rows     = store_n;
+    out->row      = store_row;
+}
+
+/* Fix Chart: the fax browser on the chart, its Fix Align and Fix Tilt */
+static void bulletin_zoom(const char *name)
+{
+    char file[96];
+
+    snprintf(file, sizeof(file), "%s", name);      /* name goes with the Bulletin */
     page_3_cb(NULL);
     if (br_open)
         browser_close();
+    browser_open();
+    for (unsigned i = 0; i < files_n; i++)
+        if (!strcmp(files[i], file)) {
+            if (picture_open(files[i]))
+                channel_overlay_show("Editing saved fax");
+            break;
+        }
+}
+
+static void bulletin_changed(void)
+{
+    buttons_refresh(&btn_bul_open);
+    buttons_refresh(&btn_bul_back);
+}
+
+/* Page 4 Bulletin: each kind of chart as a tile (wefax_bulletin.h), over the picture in the Big view */
+static void bulletin_cb(button_data_t *data)
+{
+    (void)data;
+    browser_close();
+    align_on = tilt_on = false;
+    if (view == VIEW_SMALL) {
+        view           = VIEW_BIG;
+        btn_view.label = "View\nBig";
+        apply_view();
+    }
+    if (canvas)
+        lv_group_remove_obj(canvas);
+
+    wefax_bulletin_cbs_t cbs = {.live       = bulletin_live,
+                                .open_file  = bulletin_zoom,
+                                .other_keys = app_key_cb,
+                                .changed    = bulletin_changed};
+
+    wefax_bulletin_open(dialog.obj, &cbs);
+    buttons_load_page(&page_bul);
+}
+
+static const char *bul_open_label(void)
+{
+    return wefax_bulletin_one() ? "Fix\nChart" : "Open\nChart";
+}
+
+static void bul_open_cb(button_data_t *data)
+{
+    (void)data;
+    wefax_bulletin_enter();
+}
+
+static const char *bul_back_label(void)
+{
+    return wefax_bulletin_one() ? "All\nKinds" : "All\nFaxes";
+}
+
+/* Large: back to the tiles; tiles: the list of every fax */
+static void bul_back_cb(button_data_t *data)
+{
+    (void)data;
+    if (wefax_bulletin_one()) {
+        wefax_bulletin_back();
+        return;
+    }
+    page_3_cb(NULL);
     browser_open();
 }
 
 static void page_4_cb(button_data_t *data)
 {
     (void)data;
+    bulletin_hide();
     browser_close();
     buttons_load_page(&page_4);
 }
