@@ -17,6 +17,7 @@
 #include "wefax/plan.h"
 #include "wefax/quality.h"
 #include "wefax/thumb.h"
+#include "wefax/tilt.h"
 #include "tx_player.h"
 #include "msg_box.h"
 #include "audio.h"
@@ -126,7 +127,7 @@ static view_t     view = VIEW_SMALL;
 static lv_obj_t  *app_parent;
 static lv_obj_t  *canvas, *viewport, *panel;
 static app_frame_t frame;          /* header and status line, Big and Full */
-static lv_timer_t *view_timer, *browser_save_timer;
+static lv_timer_t *view_timer, *browser_save_timer, *browser_tilt_timer;
 static bool       align_on, tilt_on; /* the encoder turns live Align / Tilt */
 
 /* PNG written by a worker, the LVGL thread only takes a copy */
@@ -138,6 +139,7 @@ typedef struct {
     time_t    when;
     char      path[128];    /* without the product, the quality and .png */
     char      product[48];  /* Auto Plan: the chart, "" for none */
+    char      station[16];  /* and its station */
 } save_job_t;
 
 static pthread_mutex_t save_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -369,6 +371,8 @@ static int wrap_x(int x, int width)
 
 /* Tilt is in 1/1000 px per row of the 750 px view; on a picture of the given width
  * it scales with the rows. The newest row does not move. */
+_Static_assert(VIEW_W == WEFAX_TILT_UNIT_W, "the tilt's unit is a row of the view");
+
 static int tilt_px(int64_t from_newest, int tilt, unsigned width)
 {
     return (int)(from_newest * tilt * VIEW_W / (1000LL * width));
@@ -685,6 +689,16 @@ static void *save_worker(void *arg)
     bool        same = job->product[0] && !wefax_plan_product_unique(job->product);
     int         best = same ? copies(job->product, job->when, NULL, false) : -1;
 
+    /* Auto Plan's chart straightened, its station's tilt learned: a fair copy only, noise has no lines to go by */
+    if (job->product[0] && q >= 60 && best < q) {
+        int t = wefax_auto_tilt(job->img, WEFAX_WIDTH, job->rows);
+
+        if (t != job->tilt)
+            printf("WEFAX TILT: %s straightened, tilt %+d (was %+d)\n", job->product, t, job->tilt);
+        job->tilt = t;
+        wefax_station_tilt_learn(job->station, t);
+    }
+
     snprintf(path, sizeof(path), "%s%s%s-q%d.png", job->path, job->product[0] ? "-" : "", job->product, q);
     snprintf(msg, sizeof(msg), "Fax saved, quality %d", q);
 
@@ -765,8 +779,10 @@ static bool save_fax(bool no_stop)
     job->rows    = store_n;
     job->no_stop = no_stop;
     job->when    = now;
-    if (plan_on && fax_on && fax_slot >= 0)
+    if (plan_on && fax_on && fax_slot >= 0) {
         snprintf(job->product, sizeof(job->product), "%s", wefax_plan_slot(fax_slot)->product);
+        snprintf(job->station, sizeof(job->station), "%s", wefax_plan_slot(fax_slot)->station);
+    }
     job->align = (int)param_i_get(cfg_wefax_align);
     job->tilt  = (int)param_i_get(cfg_wefax_tilt);
     for (unsigned r = 0; r < store_n; r++)
@@ -1055,6 +1071,16 @@ static void plan_tune(const wefax_slot_t *s)
     }
     printf("WEFAX PLAN: %02d:%02d %s %.1f kHz %s\n", s->min / 60, s->min % 60, s->station, s->freq_hz / 1000.0,
            s->product);
+
+    /* the station's own tilt: its chart comes in straight */
+    int tilt;
+
+    if (wefax_station_tilt(s->station, &tilt) && tilt != (int)param_i_get(cfg_wefax_tilt)) {
+        param_i_set(cfg_wefax_tilt, tilt);
+        if (btn_tilt.disp_btn)
+            buttons_refresh(&btn_tilt);
+        printf("WEFAX TILT: %s, tilt %+d\n", s->station, tilt);
+    }
 }
 
 /* A slot's time: a fax of the plan coming in keeps the radio, any other one gives way (saved as it is) */
@@ -1479,6 +1505,10 @@ static void app_close(void)
         lv_timer_del(browser_save_timer);
         browser_save_timer = NULL;
     }
+    if (browser_tilt_timer) {
+        lv_timer_del(browser_tilt_timer);
+        browser_tilt_timer = NULL;
+    }
 
     align_on = tilt_on = false;
     wefax_bulletin_close();
@@ -1561,6 +1591,12 @@ static void app_key_cb(lv_event_t *e)
         return;
     }
     draw_picture();
+    {
+        char msg[24];
+
+        snprintf(msg, sizeof(msg), br_align_on ? "Align %+d" : "Tilt %+d", br_align_on ? br_align : br_tilt);
+        channel_overlay_show(msg);
+    }
 
     /* the browser picture differs from its file only with a correction: Done becomes Save */
     br_modified    = br_align || br_tilt;
@@ -2285,6 +2321,21 @@ static void fix_align_cb(button_data_t *data)
     }
 }
 
+static void auto_tilt_timer_cb(lv_timer_t *t)
+{
+    char msg[48];
+
+    lv_timer_del(t);
+    browser_tilt_timer = NULL;
+    if (!br_open || !br_editing || !pic || br_tilt)
+        return;
+    br_tilt = wefax_auto_tilt(pic, pic_w, pic_h);
+    draw_picture();
+    browser_buttons(true);
+    snprintf(msg, sizeof(msg), "Auto Tilt %+d, MFK to adjust", br_tilt);
+    channel_overlay_show(msg);
+}
+
 static void fix_tilt_cb(button_data_t *data)
 {
     (void)data;
@@ -2293,6 +2344,13 @@ static void fix_tilt_cb(button_data_t *data)
     br_tilt_on  = true;
     br_align_on = false;
     align_on = tilt_on = false;
+
+    /* from the tilt that straightens it, the MFK only touches it up; the overlay first, the search takes the radio
+     * a few seconds */
+    if (!br_tilt && !browser_tilt_timer) {
+        channel_overlay_show("Auto Tilt...");
+        browser_tilt_timer = lv_timer_create(auto_tilt_timer_cb, 50, NULL);
+    }
     if (canvas) {
         lv_group_focus_obj(canvas);
         lv_group_set_editing(keyboard_group, true);

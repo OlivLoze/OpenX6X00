@@ -3524,6 +3524,12 @@ WeFax buttons. WeFax opens in RX Auto: it waits for the start tone of a fax.
 | 3 | Fax Browser, Fix Align, Fix Tilt, Done |
 | 4 | Auto Plan, Bulletin, Power |
 
+Fix Tilt on a saved fax first finds the tilt that straightens it (a station's
+line rate and the radio's never quite agree, each row comes a little earlier
+or later and the chart leans): "Auto Tilt -185" a few seconds after the press,
+then the MFK touches it up by one, "Tilt -183", and Save Fax writes it. Fix
+Align moves the fax 8 px a step, its value shown the same way.
+
 Auto Plan (page 4) leaves WeFax on its own for the day: the radio follows a
 plan of the DWD and Northwood charts (UTC), each on the frequency that comes
 in best at its hour (Northwood: 2618.5 kHz at night, 4610 from 06:00, 8040
@@ -3532,6 +3538,11 @@ before the chart starts. The button shows the next slot, the header too.
 
 - A chart coming in is never cut by the next slot; a filler slot gives way
   to a slot of the plan.
+- A chart of fair quality (mark 60 or more) is saved straightened, and its
+  tilt is kept for its station (`/mnt/wefax/tilt.conf`, the median of its last
+  five): when the plan tunes the station again, Tilt is set to it and its
+  charts come in straight. On F4OLI's radio DWD's is about -185, Northwood's
+  about -10.
 - Each fax gets a quality mark (0-100: stripes, noise, lost sync, fading),
   in its name with the chart: `wefax-20261116-062315-NW-analyse-surface-00Z-q91.png`.
 - A chart is sent several times a day: of one chart (the same name within
