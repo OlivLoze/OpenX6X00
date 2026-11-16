@@ -19,12 +19,17 @@
 #include "cfg/cfg_api.h"
 #include "ft8/utils.h"
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <math.h>
+#include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define CONF_FILE       BOARD_DATA "/clock_sync.conf"
 
@@ -114,6 +119,50 @@ static void save(void) {
     }
 }
 
+/* ntpd's own word on the clock (ntpq -c rv): the kernel's STA_UNSYNC is no use here, a step (ours, ntpd's) sets it and
+ * ntpd clears it only at its next poll, up to 17 min on. A mode 6 read of the system variables to 127.0.0.1: the
+ * reply's status word has the leap bits (3: not synchronised) and the sync source (5: its local clock, not a source) */
+static bool ntpd_synced(void) {
+    static pthread_mutex_t ask = PTHREAD_MUTEX_INITIALIZER;
+    static time_t          asked;
+    static bool            synced;
+    time_t                 now = time(NULL);
+
+    pthread_mutex_lock(&ask);
+    if (now - asked < 10) {
+        bool s = synced;
+
+        pthread_mutex_unlock(&ask);
+        return s;
+    }
+    asked  = now;
+    synced = false;
+
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (fd >= 0) {
+        struct sockaddr_in to  = {.sin_family = AF_INET, .sin_port = htons(123)};
+        uint8_t            q[12] = {0x16, 2, 0, 1};      /* LI 0, version 2, mode 6; READVAR, sequence 1, association 0 */
+        uint8_t            r[512];
+        struct pollfd      pfd = {.fd = fd, .events = POLLIN};
+
+        to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (sendto(fd, q, sizeof(q), 0, (struct sockaddr *)&to, sizeof(to)) == sizeof(q) && poll(&pfd, 1, 200) == 1 &&
+            recv(fd, r, sizeof(r), 0) >= 12 && (r[0] & 7) == 6 && (r[1] & 0x80)) {
+            int leap   = r[4] >> 6;
+            int source = r[4] & 0x3f;
+
+            synced = leap != 3 && source != 0 && source != 5;
+        }
+        close(fd);
+    }
+
+    bool s = synced;
+
+    pthread_mutex_unlock(&ask);
+    return s;
+}
+
 bool clock_sync_kept(const char **why) {
     double lat, lon;
     int    age;
@@ -123,7 +172,7 @@ bool clock_sync_kept(const char **why) {
             *why = "GPS";
         return true;
     }
-    if (ftx_clock_synced(NULL)) {
+    if (ntpd_synced() || ftx_clock_synced(NULL)) {
         if (why)
             *why = "NTP";
         return true;
