@@ -83,6 +83,10 @@ void audio_worker_destroy(audio_worker_t *w);
 /* Push audio samples from the radio audio callback (any thread). */
 void audio_worker_feed(audio_worker_t *w, unsigned int n, float *samples);
 
+/* Where the decoder's window began in its slot, s by the clock (NAN before the first slot boundary): a decode's
+ * time_sec plus this is where it started in the slot. From the decoder thread (its callbacks) */
+float audio_worker_window_start(const audio_worker_t *w);
+
 /* Waterfall FFT size chosen from filter bandwidth at create time. */
 uint16_t audio_worker_nfft(const audio_worker_t *w);
 

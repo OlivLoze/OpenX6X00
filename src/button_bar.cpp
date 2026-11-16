@@ -388,7 +388,7 @@ static button_data_t btn_chans = app_btn("Channels", ACTION_APP_CHANNELS);
 static button_data_t btn_bands = app_btn("Bands", ACTION_APP_BANDS);
 static button_data_t btn_prop = app_btn("Propa-\ngation", ACTION_APP_PROPAGATION);
 static button_data_t btn_scan = app_btn("Scanner", ACTION_APP_SCAN);
-static button_data_t btn_gps = {.type = BTN_TEXT, .label = "GPS", .press = app_press,
+static button_data_t btn_gps = {.type = BTN_TEXT, .label = "GPS /\nClock", .press = app_press,
                                 .hold = [](button_data_t *) { main_screen_start_app(ACTION_APP_SNAKE); },  /* the hidden game */
                                 .ctrl = ACTION_APP_GPS};
 

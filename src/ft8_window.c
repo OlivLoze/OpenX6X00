@@ -11,6 +11,7 @@
  */
 
 #include "ft8_window.h"
+#include "clock_sync.h"
 #include "board.h"
 
 #include <errno.h>
@@ -1484,6 +1485,8 @@ static void on_message(const char *text, int snr, float freq_hz, float time_sec,
     ft8_udp_send_decode(true, cur_proto() == FTX_PROTOCOL_FT8 ? "~" : "+", text, (int32_t)snr, time_sec,
                         (uint32_t)(freq_hz + 0.5f));
     add_rx_text((int16_t)snr, text, slot->odd, freq_hz, time_sec);
+    /* where it started by our clock: the GPS / Clock page's measure */
+    clock_sync_ft8_add(time_sec + audio_worker_window_start(audio_worker));
 }
 
 typedef struct {
@@ -1543,6 +1546,7 @@ static void on_psd(const float *psd, uint16_t nfft, float sec, const slot_info_t
 }
 
 static void on_slot_end(const slot_info_t *slot, void *ctx) {
+    clock_sync_ft8_slot_end();
     qso_lock();
     if (qso) ftx_qso_processor_start_new_slot(qso);
     qso_unlock();
@@ -1631,7 +1635,11 @@ static void on_tick(const slot_info_t *slot, bool new_slot, float sec, void *ctx
     bool tx_pending = tx_msg.msg[0] != '\0';
     qso_unlock();
 
-    if (transmit(slot, sec, new_slot) || !new_slot) return;
+    if (transmit(slot, sec, new_slot)) return;
+    if (!new_slot) {
+        clock_sync_ft8_auto(sec, ftx_slot_time(cur_proto()), sending);
+        return;
+    }
 
     static unsigned ft2_slots;
     struct timespec now;

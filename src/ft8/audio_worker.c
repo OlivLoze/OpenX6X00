@@ -59,6 +59,10 @@ struct audio_worker_s {
     int             block_size;
 
     uint64_t        last_psd_time_ms;
+
+    /* Where the decoder's window began, s after its slot's start by the clock (worker thread writes, the decode
+     * callbacks read it on the same thread); NAN until a slot boundary has set it */
+    float           win_start;
 };
 
 /* ---------- small helpers ---------------------------------------------- */
@@ -209,6 +213,15 @@ static void *worker_main(void *arg) {
             ftx_worker_reset();
             drain_audio_buf(w);
 
+            /* the next window starts with the audio from now: where it stands in the new slot (the last decode can
+             * run past the slot's start) */
+            struct timespec at;
+            float           off = 0.0f;
+
+            clock_gettime(CLOCK_REALTIME, &at);
+            get_time_slot(w->proto, at, &off);
+            w->win_start = off < ftx_slot_time(w->proto) / 2 ? off : NAN;
+
             if (w->cb.on_slot_end) {
                 w->cb.on_slot_end(&info, w->cb.ctx);
             }
@@ -241,6 +254,7 @@ audio_worker_t *audio_worker_create(int audio_sample_rate,
     if (!w) return NULL;
 
     w->sample_rate    = audio_sample_rate;
+    w->win_start      = NAN;
     w->proto          = proto;
     w->filter_low_hz  = filter_low_hz;
     w->filter_high_hz = filter_high_hz;
@@ -336,6 +350,10 @@ void audio_worker_feed(audio_worker_t *w, unsigned int n, float *samples) {
         cbufferf_write(w->audio_buf, samples, n);
     }
     pthread_mutex_unlock(&w->audio_mux);
+}
+
+float audio_worker_window_start(const audio_worker_t *w) {
+    return w ? w->win_start : NAN;
 }
 
 uint16_t audio_worker_nfft(const audio_worker_t *w) {

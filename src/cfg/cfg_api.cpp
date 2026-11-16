@@ -29,6 +29,7 @@ ParamInt         *cfg_moni                = nullptr;
 ParamInt         *cfg_wefax_align         = nullptr;   // WEFAX app
 ParamInt         *cfg_wefax_tilt          = nullptr;
 ParamInt         *cfg_wefax_plan          = nullptr;
+ParamInt         *cfg_clock_ft8_auto      = nullptr;
 ParamInt         *cfg_atu_enabled         = nullptr;
 ParamInt         *cfg_auto_level_enabled  = nullptr;
 ParamFloat       *cfg_auto_level_offset   = nullptr;
@@ -230,6 +231,7 @@ void cfg_api_init(void (*on_db_error)(const char *)) {
     cfg_mic              = &cfg_sm.p_mic;
     cfg_wefax_tilt       = &cfg_sm.p_wefax_tilt;
     cfg_wefax_plan       = &cfg_sm.p_wefax_plan;
+    cfg_clock_ft8_auto   = &cfg_sm.p_clock_ft8_auto;
     cfg_wefax_align      = &cfg_sm.p_wefax_align;
     cfg_hmic             = &cfg_sm.p_hmic;
     cfg_imic             = &cfg_sm.p_imic;

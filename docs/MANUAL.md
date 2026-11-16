@@ -208,7 +208,7 @@ The APP button opens four pages of apps and tools:
 |---|---|
 | APP 1:4 | Modes, Cluster, SWR Scan, RX Recorder |
 | APP 2:4 | Settings, CW Trainer, Field Ops, Channels |
-| APP 3:4 | Bands, GPS, Screen rec, CW Keyboard |
+| APP 3:4 | Bands, GPS / Clock, Screen rec, CW Keyboard |
 | APP 4:4 | Propagation, Scanner |
 
 With Icon menus on (Settings > Display > INTERFACE, on by default) APP also
@@ -291,7 +291,7 @@ Where: Settings > Keys > FRONT KEYS, LONG PRESS.
 |---|---|
 | Quick | none, screenshot, RX recorder on/off, screen rec on/off, mute, frequency lock on/off, step up, step down, WF mode, WF 3D on/off, CW decoder on/off, CW ZAP (in CW and CW-R, the dial onto the signal the CW Tuner hears, as the CW 1:2 ZAP button; up to v0.3.9 neither was a key action, #196), SWL panel (as the X6100 hand mic's GENE: the broadcast stations on the air within 2 kHz, again the next one), SWL: save channel (as its NW: the station shown saved as a channel; up to v0.3.11 neither was a key action, so an X6200 could not open the panel, #155), ATT on/off, PRE on/off, tuner on/off, tuner tune (transmits a carrier), TUNE ext. tuner on/off (a carrier for a tuner at the antenna, see [TUNE for an external tuner](#tune-for-an-external-tuner)) |
 | Digital modes | RTTY, FT8, WSPR, JS8, SSTV, WeFax, NavTex, RADE |
-| Tools | Cluster, CW Trainer, CW Keyboard, Field Ops, Bands, Propagation, Channels, Scanner, RX recorder, SWR Scan, GPS, QTH grid, Settings |
+| Tools | Cluster, CW Trainer, CW Keyboard, Field Ops, Bands, Propagation, Channels, Scanner, RX recorder, SWR Scan, GPS / Clock, QTH grid, Settings |
 
 The hand mic F1 and F2 keys (and the H-22's F3 on the X6200), short and long
 press, are set in the same tab, from the quick actions (all but the
@@ -4777,6 +4777,84 @@ to the bands, and the beacons heard here, see [Propagation](#propagation).
   its 10 seconds, then sends nothing, and the radio stays where it is.
 - The numbers are the same as in Field Ops.
 
+### GPS / Clock
+
+APP > GPS / Clock: the GPS (satellites in view and in use, fix, its date and
+time, position, locator, gpsd's state) and the radio's clock, with two ways to
+set it in the field when neither WiFi (NTP) nor a GPS is there. The clock
+chip keeps the time while the radio is off, but it drifts a few seconds a
+week and FT8 and JS8 need it within about a second.
+
+The rows:
+
+- Clock: the time in UTC and what keeps it or set it last: "kept by NTP",
+  "kept by GPS", "FT8 -0.42 s 3 min ago", "RWM 9996 +0.031 s 1 h ago", or
+  "clock chip" (nothing set it since the start).
+- FT8 says: how far the clock is off, by the FT8 and FT4 stations heard,
+  and from how many decodes: "ahead 0.32 s, 18 decodes, 2 min ago". FT8 must
+  have been open: the measure is taken there and kept 15 minutes.
+- Time station: what the time station gives (below).
+
+The buttons:
+
+| Button | Does |
+|---|---|
+| Station | RWM 4996, 9996, 14996 kHz, WWV 5000, 10000, 15000 kHz |
+| Listen / Stop listening | tunes the station and listens for its minute marker |
+| Set from FT8 | sets the clock from the FT8 measure (15 minutes old at most) |
+| FT8 Auto: On / Off | FT8 sets the clock itself in the field (On by default) |
+
+#### From the FT8 stations
+
+Most stations on FT8 keep their clock from the internet or a GPS, so where
+their signals start in our slots says where our clock is. Each decode's
+start is noted; once at least 8 decodes over two slots agree (their median
+spread under 0.3 s), the median gives the clock's error. With FT8 Auto on,
+no NTP and no GPS, FT8 sets the clock itself in the middle of a slot when it
+is off by 0.2 s or more ("Clock -0.42 s from the FT8 stations heard"), at
+most every two minutes, never while transmitting. The step goes into the
+clock chip too. With FT8 Auto off it only measures: Set from FT8 takes it.
+
+The measure has to be learned once. The radio's audio path and the stations'
+habits move every decode alike, so while NTP keeps the clock (at home, on
+WiFi) the radio learns where the band's decodes start, slot after slot
+(FT8 says "learning in FT8: N slots"). A few minutes of FT8 on a busy band
+with WiFi is enough; it is kept in `/mnt/clock_sync.conf`. Not learned, the
+measure takes WSJT-X's 0.5 s and is less exact.
+
+FT8 cannot see a clock off by more than about 2 s: its decodes stop. For that,
+FT8's Time Sync (pressed as a slot starts) or the time station.
+
+#### From a time station
+
+A time station sends a marker on each minute; heard, the radio knows when
+the minute starts to a few milliseconds:
+
+- RWM (Moscow, 4996, 9996 and 14996 kHz): keys its carrier 500 ms on each
+  minute, from minute 10 to 30 and from 40 to 60 of each hour (in the other
+  minutes it sends a plain carrier or its callsign). Heard well in Europe:
+  9996 kHz by day, 4996 kHz at night.
+- WWV (Colorado, 5, 10 and 15 MHz): a 1000 Hz tone 800 ms on each minute.
+  From Europe at times, on 10 or 15 MHz.
+
+Listen tunes the station in USB (the marker as a 1000 Hz tone; the frequency
+and mode come back when the window closes). Time station shows "listening",
+then each marker heard and its level over the noise. Two markers a minute or
+a few minutes apart that agree within 30 ms set the clock ("Clock +0.031 s
+from RWM 9996", into the clock chip too); within 20 ms it is right and left
+alone. Listening on, each next pair checks it again.
+
+The marker says when a minute starts, not which minute: the clock must be
+within 30 s already. The clock chip keeps it so for months; if it lost the
+time (a flat battery), set the date and time by hand in Settings > General >
+DATE / TIME first.
+
+While NTP keeps the clock the markers teach the radio the delay from the
+antenna to the measure (about 30 ms with the propagation), kept in
+`/mnt/clock_sync.conf` with FT8's: listen once at home with WiFi.
+
+Canada's CHU, the third station with a time code, closed on 22 June 2026.
+
 ### Propagation
 
 APP > Propagation (APP 4:4, or a long-press action): how the bands are doing,
@@ -7381,8 +7459,10 @@ FAT32 on a PC settles it.
 #### FT8, JS8 or WSPR decode nothing, or nobody answers
 
 Check the clock: FT8 and JS8 need it within about 2 s, WSPR within about a
-second. WiFi (NTP) or GPS sets it. FT8 and JS8 also have Time Sync (FT8's
-for a clock that neither keeps).
+second. WiFi (NTP) or GPS sets it. In the field without them, FT8 sets it
+from the stations it decodes (FT8 Auto), and [GPS / Clock](#gps--clock) from
+a time station's minute marker (RWM, WWV). FT8 and JS8 also have Time Sync
+(FT8's for a clock that neither keeps).
 
 #### The clock is back at the same time after every power-off
 
@@ -7390,7 +7470,8 @@ The radio keeps the time in a clock chip while it is off. Some of these chips
 come stopped (their STOP or TEST1 bit set) and never count. The radio starts
 such a chip at boot and says so in the system log ("Clock chip ... was
 stopped ... started"). The chip takes the right time at the next NTP sync
-(when WiFi or Ethernet comes up), from FT8's Time Sync, or from the date and
+(when WiFi or Ethernet comes up), from FT8 (Auto or Time Sync), from a time
+station (GPS / Clock), or from the date and
 time set in Settings > General > DATE / TIME, and keeps it from then on.
 
 #### The GPS icon turns grey after a while

@@ -13,7 +13,7 @@ target_sources(${PROJECT_NAME} PUBLIC
     rtty.c screen_shot.c screen_rec.c avi_writer.c screen_light.c screen_idle.c screen_saver.c gps.c
     cat.cpp tci_ws.c tci_audio.c tci_server.c tci_ask.c cfg_socket.cpp
     app_window.c settings_window.cpp swrscan_window.c ft8_window.c
-    freq_entry.c gps_window.c cw_messages.c
+    freq_entry.c gps_window.c clock_sync.c clock_beacon.c cw_messages.c
     voice_messages.c recorder_window.c qth_entry.c station.c dialog_channels.c
     js8_window.c js8_map.c map_geo.c
     dialog_psk.c psk_rx.c psk_tx.c psk_spec.c psk_macro.c digi_qso.c
