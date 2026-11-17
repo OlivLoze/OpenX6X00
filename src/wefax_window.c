@@ -1007,9 +1007,9 @@ static void plan_show(int next)
     if (!plan_on)
         snprintf(l, sizeof(l), "Auto\nPlan");
     else if (!s)
-        snprintf(l, sizeof(l), "Auto Plan\nnext --:--");
+        snprintf(l, sizeof(l), "Plan\nnext --:--");
     else
-        snprintf(l, sizeof(l), "Auto Plan\nnext %02d:%02d", s->min / 60, s->min % 60);
+        snprintf(l, sizeof(l), "Plan\nnext %02d:%02d", s->min / 60, s->min % 60);   /* two lines in every theme */
     plan_next_i = plan_on && s ? next : -1;
     if (s && plan_on)
         snprintf(plan_next, sizeof(plan_next), "%02d:%02d %s %.1f", s->min / 60, s->min % 60, s->station,

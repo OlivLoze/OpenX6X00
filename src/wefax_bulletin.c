@@ -586,6 +586,13 @@ static void set_quality(lv_obj_t *l, int q)
     lv_obj_set_style_text_color(l, col, LV_PART_MAIN);
 }
 
+/* The tile's line under its name: where it starts, and as wide as the quality on its right lets it */
+static void info_at(tile_t *tl, int x, bool qual)
+{
+    lv_obj_set_x(tl->info, x);
+    lv_obj_set_width(tl->info, TILE_W - x - (qual ? 50 : 2));
+}
+
 static void tile_show(int t)
 {
     tile_t *tl = &tiles[t];
@@ -620,7 +627,7 @@ static void tile_show(int t)
         lv_obj_add_flag(tl->dot, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_fmt(tl->info, "receiving %d %%", permille / 10);
         lv_obj_set_style_text_color(tl->info, TC(text_head), LV_PART_MAIN);
-        lv_obj_set_x(tl->info, 1);
+        info_at(tl, 1, false);
         lv_label_set_text(tl->qual, "");
         lv_obj_invalidate(tl->canvas);
         return;
@@ -635,7 +642,7 @@ static void tile_show(int t)
         lv_canvas_fill_bg(tl->canvas, TC(panel), LV_OPA_COVER);
         lv_obj_clear_flag(tl->empty, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(tl->dot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_x(tl->info, 1);
+        info_at(tl, 1, false);
         lv_label_set_text(tl->qual, "");
         if (it->file[0]) {
             lv_label_set_text(tl->empty, st == PRV_COMING ? "..." : "no preview");
@@ -662,12 +669,12 @@ static void tile_show(int t)
     if (mode == WEFAX_TILES_BULLETIN) {         /* how old: the dot and the hours */
         lv_obj_clear_flag(tl->dot, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(tl->dot, age_color(age), LV_PART_MAIN);
-        lv_obj_set_x(tl->info, 1 + DOT + 6);
+        info_at(tl, 1 + DOT + 6, true);
         age_text(when, sizeof(when), age);
         snprintf(text, sizeof(text), "%s ago", when);
     } else {                                    /* when and who */
         lv_obj_add_flag(tl->dot, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_x(tl->info, 1);
+        info_at(tl, 1, true);
         snprintf(text, sizeof(text), "%.2s:%.2s %s", it->file + 15, it->file + 17, station_of(it->file));
     }
     lv_label_set_text(tl->info, text);
@@ -922,6 +929,7 @@ static void tiles_create(int w, int h)
         tl->name = label(tl->box, &sony_20, TC(text), 1, tile_h + 3, TILE_W);
         tl->dot  = dot(tl->box, 1, tile_h + 3 + 30, DOT);
         tl->info = label(tl->box, &sony_18, TC(text_mute), 1, tile_h + 3 + 24, TILE_W - DOT - 50);
+        lv_obj_set_height(tl->info, 22);     /* one line, the rest dotted */
         tl->qual = lv_label_create(tl->box);
         lv_obj_set_style_text_font(tl->qual, &sony_18, LV_PART_MAIN);
         lv_label_set_text(tl->qual, "");
