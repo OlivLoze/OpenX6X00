@@ -797,11 +797,24 @@ static void save_result(void)
 
 /* ---- Auto ---- */
 
+/* A fax ended by itself (stop tone, a new start, a slot of the plan): saved unless it is a few rows, a false start
+ * (a chart is about 1300) */
+#define AUTO_MIN_ROWS   200
+
+static bool save_auto(bool no_stop)
+{
+    if (store_n && store_n < AUTO_MIN_ROWS) {
+        printf("WEFAX AUTO: %u rows only, a false start: not saved\n", store_n);
+        return true;
+    }
+    return !store_n || save_fax(no_stop);
+}
+
 /* A new start over a fax the GUI took: the old one is over even if its stop was missed.
  * The decoder already follows the new fax, it is not reset. */
 static bool auto_keep_previous(void)
 {
-    if (store_n && !save_fax(true)) {
+    if (!save_auto(true)) {
         printf("WEFAX AUTO: the previous fax could not be saved, kept\n");
         return false;
     }
@@ -815,7 +828,7 @@ static void auto_fax_over(bool stopped)
 {
     if (!decoder)
         return;
-    if (store_n && !save_fax(!stopped)) {
+    if (!save_auto(!stopped)) {
         printf("WEFAX AUTO: the fax could not be saved, kept\n");
         return;
     }
@@ -1032,8 +1045,7 @@ static void plan_tune(const wefax_slot_t *s)
         freq_list_tune(&it, WEFAX_CENTER_HZ);
     plan_dial = dial;
     if (!auto_mode()) {
-        if (store_n)
-            save_fax(true);
+        save_auto(true);
         rx_auto();
         buttons_refresh(&btn_rx_mode);
     }

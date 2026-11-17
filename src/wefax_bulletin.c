@@ -401,6 +401,7 @@ static void chart_name(const item_t *it, char *out, size_t n)
     hours_of(p, h, sizeof(h));
     if (!p[0] || strstr(p, "inconnu"))                         snprintf(out, n, "Unsorted");
     else if (strstr(p, "temps-significatif") || strstr(p, "SIGWX")) snprintf(out, n, "Significant weather");
+    else if (strstr(p, "analyse-surface-Atlantique"))          snprintf(out, n, "Analysis, North Atlantic");
     else if (strstr(p, "analyse"))                             snprintf(out, n, "Analysis");
     else if (strstr(p, "hPa"))                                 snprintf(out, n, "Upper air %s", h);
     else if (strstr(p, "prevision"))                           snprintf(out, n, "Forecast %s", h);
