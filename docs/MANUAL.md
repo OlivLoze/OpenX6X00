@@ -2787,7 +2787,7 @@ Starting and stopping it:
 
 - A key: give "TUNE ext. tuner on/off" to a front key's long press or to a
   hand mic F key (Settings > Keys). It works with an app open.
-- The Ext tune button of the digital apps: FT8/FT4/FT2 page 5, JS8 page 7,
+- The Ext tune button of the digital apps: FT8/FT4/FT2 page 4, JS8 page 7,
   WSPR page 2, SSTV page 3, PSK31/PSK63 and Olivia page 6, JTTY page 5. It
   shows the TUNE power, and Stop while it tunes.
 - The browser Panel's TUNE button (see
@@ -3059,13 +3059,14 @@ Buttons:
 
 | Page | Buttons |
 |---|---|
-| 1 | Show: All / CQ, Mode: FT8 / FT4 / FT2, TX CQ, TX Call |
-| 2 | Hold Freq, Auto, Force QSO save, Power |
-| 3 | CQ Modifier, Time Sync, Log Map, Live Map |
-| 4 | Freq: Preset / 14.091, Hound: Off / On, Retries, For you |
-| 5 | Ext tune (see [TUNE for an external tuner](#tune-for-an-external-tuner)) |
+| 1 operate | TX CQ, TX Call, Show: All / CQ (hold: the For you strip on / off), View: Traffic / Tiles |
+| 2 the QSO | Auto, Hold Freq, Retries, Force QSO save |
+| 3 the band | Mode: FT8 / FT4 / FT2, Freq: Preset / 14.091, Hound: Off / On, Power |
+| 4 tools | CQ Modifier, Time Sync, Map (the Live Map; hold: the Log Map), Ext tune (see [TUNE for an external tuner](#tune-for-an-external-tuner)) |
 
-- Show: CQ shows the CQs and the messages to you; All shows all traffic.
+- Show: CQ shows the CQs and the messages to you; All shows all traffic. It filters the
+  tiles as it does the list.
+- View: the traffic (the list, as the app opens) or the tiles, below.
 - TX CQ calls CQ. A band key, Freq or Mode ends the CQ: TX CQ goes to
   Disabled (after a band key or Freq the radio also says "CQ off: press TX
   CQ to call on this frequency"), and one press calls again there. A reply,
@@ -3105,7 +3106,13 @@ Buttons:
   the clock"): moved to a press it could only get worse.
 - CQ Modifier: for example `CQ POTA` or `CQ DX`.
 
-The list. Each row has the slot time, the message, and on the right the
+The lane. Over the waterfall, each call heard in the last 2 minutes is written over
+its offset, on two lines where they would meet: red for a station that called you in
+the last 3 minutes, white for a CQ, grey for the others, yellow for the tile selected
+and for TX, your offset.
+
+The list (View: Traffic). A line with the slot's time heads its rows; your
+transmissions are in it in blue, in their place. Each row has the message, and on the right the
 country with its flag, the distance (when the sender sent a grid and your
 QTH is set) and the SNR. The country comes from AD1C's cty.dat (SP2KMO's
 upstream PR #282). Settings > Display > INTERFACE > FT8/FT4 info picks what
@@ -3113,13 +3120,27 @@ goes next to the SNR: km, mi, Country, Country + km (the default) or
 Country + mi. The "Saved QSO" message and the web Panel's FT8 list give the
 distance in the same unit.
 
-| Row | Colour |
+| Row | Looks |
 |---|---|
-| CQ, not worked | green |
-| CQ, worked on another band or mode | dark green |
-| CQ, worked on this band and mode | darker green, struck through |
+| CQ, not worked | bright, a green edge, a green CQ tag |
+| CQ, worked on another band or mode | a fainter edge, a "worked" tag |
+| CQ, worked on this band and mode | the same, struck through |
+| a CQ or a call to you from a country not in your log | a yellow NEW tag |
+| the other stations' QSOs | grey |
 | a message to you | red |
 | your TX | blue |
+
+The CQs stand out of the traffic, to answer them fast (F4OLI).
+
+The tiles (View: Tiles). One tile a station heard in the last 2 minutes: flag, call,
+signal, country and distance, and a tag: "calls you" with its report (the tile red for
+3 minutes after its call), NEW (a CQ from a country not in your log), CQ (or CQ POTA),
+worked, QSO (it is in a QSO with someone else). The stations that called you come first,
+then the NEW CQs, the CQs, the CQs worked, the others; the strongest first in each. Nine
+a page, the page under them (1/2). The MFK goes from tile to tile (its station's offset
+marked on the waterfall); a press calls the selected station as a press on its last row
+would, and the first press with none selected picks the first tile. A touch on a tile
+calls it. A press while transmitting stops TX, as on the list.
 
 A POTA tag after the message marks a station spotted on POTA right now, and
 any `CQ POTA`. The spots are the ones the cluster already fetches from
@@ -3143,7 +3164,7 @@ list, so they do not scroll away.
 - An MFK press on a row replies, as in the list.
 - With the MFK: down past the last row of the list enters the strip; up from
   its first row goes back to the list.
-- For you (page 4) turns the strip off: no pinned rows, the calls to you stay
+- Show held (page 1) turns the strip off: no pinned rows, the calls to you stay
   in the list only, in red as before. On by default.
 - The strip has no title: a line in the "to you" colour sits on top of it.
   It is hidden when empty.
@@ -3215,17 +3236,17 @@ but Auto does not answer it and a press does not either, as there is no call
 to send the answer to; nothing is logged with it. The call shows once a
 message of that station's with its full call has been decoded.
 
-Log Map. Page 3 > Log Map shows the logged stations on a world map centred on you:
+Log Map. Page 4 > Map held shows the logged stations on a world map centred on you:
 great-circle paths, a dot and the callsign for each station. Calls and dots
-are larger since v0.119. ESC or Log Map closes it.
+are larger since v0.119. ESC or Map closes it.
 
-Live Map. Page 3 > Live Map puts on the same map every station decoded in
+Live Map. Page 4 > Map puts on the same map every station decoded in
 the last 15 minutes that sent a grid (a CQ or a reply with its 4-character
 square). The dot's colour is the distance from your QTH square: green under
 1000 km, blue under 3000, orange under 8000, pink beyond. Stations heard in the
 last minute have a bigger, ringed dot and their call first; a call is left out
 where it would cover another. A band change empties it. Your own position is
-the centre of your 4-character square, the red dot. ESC or Live Map closes it;
+the centre of your 4-character square, the red dot. ESC or Map closes it;
 the map is a snapshot, open it again to refresh.
 
 PSK Reporter. Settings > Cluster > PSK REPORTER > Report decodes (on by default)

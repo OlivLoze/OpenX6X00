@@ -77,6 +77,7 @@
 #define WIDTH           771
 #define WF_HEIGHT       (DIALOG_H - 26)   /* 13 px margins above and below */
 #define WF_VISIBLE      40     /* waterfall clear above the log: ~16 s, a slot, to find a clear spot */
+#define LANE_H          26     /* the calls over the waterfall, two lines */
 
 #define CUSTOM_MIN_HZ   1800000  /* custom dial frequency: 160m ... */
 #define CUSTOM_MAX_HZ   54000000 /* ... to the top of 6m */
@@ -216,10 +217,18 @@ typedef struct {
     uint32_t    win_gen;
 } row_job_t;
 
+static void stations_add(const cell_data_t *cd);
+static bool dxcc_worked(const char *prefix);
+
 static void row_apply(void *arg) {
     row_job_t *j = arg;
 
-    if (j->win_gen == win_gen) table_view_add_msg_cb(&j->cd);
+    if (j->win_gen != win_gen) return;
+    if (j->cd.cell_type == CELL_RX_CQ || j->cd.cell_type == CELL_RX_MSG || j->cd.cell_type == CELL_RX_TO_ME) {
+        j->cd.new_dxcc = j->cd.cty_prefix[0] && !dxcc_worked(j->cd.cty_prefix);
+        stations_add(&j->cd);
+    }
+    table_view_add_msg_cb(&j->cd);
 }
 
 static void row_post(const cell_data_t *cd) {
@@ -232,6 +241,418 @@ static void give_list_the_mfk(void) {
     lv_group_add_obj(keyboard_group, table_view_obj());
     lv_group_focus_obj(table_view_obj());
     lv_group_set_editing(keyboard_group, true);
+}
+
+/* ---- The countries in the log: a decode from another one is NEW (the list's tag, the tiles) ---- */
+
+#define WORKED_MAX 400
+
+static char worked_dxcc[WORKED_MAX][8];
+static int  worked_n;
+
+static bool dxcc_worked(const char *prefix) {
+    for (int i = 0; i < worked_n; i++)
+        if (!strcmp(worked_dxcc[i], prefix)) return true;
+    return false;
+}
+
+static void dxcc_add_call(const char *call, void *ud) {
+    const char *name, *prefix;
+
+    (void)ud;
+    if (!dxcc_lookup(call, &name, &prefix) || dxcc_worked(prefix) || worked_n >= WORKED_MAX) return;
+    snprintf(worked_dxcc[worked_n++], sizeof(worked_dxcc[0]), "%s", prefix);
+}
+
+/* ---- The stations heard: the tiles and the lane over the waterfall (LVGL thread, from the rows shown, so Show
+ * filters them as it does the list) ---- */
+
+#define ST_MAX          64
+#define ST_KEEP_MS      (2 * 60 * 1000)     /* a station goes 2 minutes after its last decode... */
+#define CALLS_YOU_MS    (3 * 60 * 1000)     /* ...one that called us stays red this long after its call */
+
+typedef struct {
+    cell_data_t cd;         /* its last row: a press calls it as a press on that row */
+    uint32_t    heard;      /* lv_tick of that row */
+    uint32_t    to_me_at;   /* lv_tick of its last call to us, 0 none */
+    int         report;     /* the report it gave us, in that call */
+    bool        has_report;
+} ft8_station_t;
+
+static ft8_station_t st_all[ST_MAX];
+static int           st_n;
+
+static void lane_update(void);
+static void board_update(void);
+
+static bool to_me_fresh(const ft8_station_t *st) {
+    return st->to_me_at && lv_tick_elaps(st->to_me_at) < CALLS_YOU_MS;
+}
+
+static void stations_drop_old(void) {
+    int kept = 0;
+
+    for (int i = 0; i < st_n; i++)
+        if (lv_tick_elaps(st_all[i].heard) < ST_KEEP_MS || to_me_fresh(&st_all[i])) st_all[kept++] = st_all[i];
+    st_n = kept;
+}
+
+static void stations_add(const cell_data_t *cd) {
+    ft8_station_t *st = NULL;
+
+    if (!cd->meta.call_de[0] || cd->meta.call_de[0] == '<') return;
+    stations_drop_old();
+    for (int i = 0; i < st_n && !st; i++)
+        if (!strcmp(st_all[i].cd.meta.call_de, cd->meta.call_de)) st = &st_all[i];
+    if (!st) {
+        if (st_n == ST_MAX) {   /* full: the one heard longest ago goes */
+            int old = 0;
+            for (int i = 1; i < st_n; i++)
+                if (lv_tick_elaps(st_all[i].heard) > lv_tick_elaps(st_all[old].heard)) old = i;
+            st_all[old] = st_all[--st_n];
+        }
+        st = &st_all[st_n++];
+        memset(st, 0, sizeof(*st));
+    }
+    qso_log_search_worked_t worked = st->cd.worked_type;
+    bool                    cq     = st->cd.cell_type == CELL_RX_CQ;
+
+    st->cd    = *cd;
+    st->heard = lv_tick_get();
+    if (cd->cell_type != CELL_RX_CQ && cq) st->cd.worked_type = worked;    /* what its CQ told of the log */
+    if (cd->cell_type == CELL_RX_TO_ME) {
+        st->to_me_at   = st->heard ? st->heard : 1;
+        st->has_report = cd->meta.type == FTX_MSG_TYPE_REPORT || cd->meta.type == FTX_MSG_TYPE_R_REPORT;
+        st->report     = cd->meta.remote_snr;
+    }
+    lane_update();
+    board_update();
+}
+
+static void stations_clear(void) {
+    st_n = 0;
+    lane_update();
+    board_update();
+}
+
+/* ---- The lane: each call heard over its offset, on two lines where they would meet; those that call us red, the
+ * tile selected yellow, CQs white, the others grey; TX where we send ---- */
+
+static lv_obj_t *lane;
+static lv_obj_t *board;                 /* the tiles, over the hidden list */
+static bool      board_on;              /* the tiles show (View), else the traffic: the list */
+static char      board_sel_call[16];
+
+static lv_coord_t lane_x(float hz) {
+    if (filter_high <= filter_low) return 0;
+    return (lv_coord_t)((hz - filter_low) * WIDTH / (filter_high - filter_low));
+}
+
+static void lane_update(void) {
+    if (lane) lv_obj_invalidate(lane);
+}
+
+static int st_by_hz(const void *a, const void *b) {
+    float x = (*(ft8_station_t *const *)a)->cd.meta.freq_hz, y = (*(ft8_station_t *const *)b)->cd.meta.freq_hz;
+    return (x > y) - (x < y);
+}
+
+static void lane_draw_cb(lv_event_t *e) {
+    lv_draw_ctx_t       *ctx = lv_event_get_draw_ctx(e);
+    lv_area_t            box;
+    lv_coord_t           ends[2] = {-1000, -1000};
+    static ft8_station_t *by_hz[ST_MAX];
+    lv_draw_label_dsc_t  ld;
+
+    lv_obj_get_coords(lane, &box);
+    lv_draw_label_dsc_init(&ld);
+    ld.font = &sony_16;
+    for (int i = 0; i < st_n; i++) by_hz[i] = &st_all[i];
+    qsort(by_hz, st_n, sizeof(by_hz[0]), st_by_hz);
+
+    /* TX first: the calls give way to it on its line */
+    for (int k = -1; k < st_n; k++) {
+        const char *call = k < 0 ? "TX" : by_hz[k]->cd.meta.call_de;
+        lv_coord_t  x    = box.x1 + lane_x(k < 0 ? params.ft8_tx_freq.x : by_hz[k]->cd.meta.freq_hz);
+        lv_point_t  size;
+
+        lv_txt_get_size(&size, call, ld.font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (x + size.x > box.x2) x = box.x2 - size.x;
+        int line = x > ends[0] + 6 ? 0 : x > ends[1] + 6 ? 1 : -1;
+        if (line < 0) continue;     /* no room on either line */
+        ends[line] = x + size.x;
+
+        if (k < 0) ld.color = TC(warn);
+        else if (board_on && !strcmp(by_hz[k]->cd.meta.call_de, board_sel_call)) ld.color = TC(warn);
+        else if (to_me_fresh(by_hz[k])) ld.color = TC(err);
+        else if (by_hz[k]->cd.cell_type == CELL_RX_CQ) ld.color = TC(text);
+        else ld.color = TC(text_mute);
+
+        lv_area_t a = {x, box.y1 + 1 + line * 12, x + size.x, box.y1 + 1 + line * 12 + 14};
+        lv_draw_label(ctx, &ld, &a, call, NULL);
+    }
+}
+
+static void build_lane(void) {
+    lv_obj_t *l = lane = lv_obj_create(dialog.obj);
+
+    lv_obj_remove_style_all(l);
+    lv_obj_set_style_bg_color(l, TC(panel), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(l, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(l, WIDTH, LANE_H);
+    lv_obj_set_pos(l, 13, 13);
+    lv_obj_add_event_cb(l, lane_draw_cb, LV_EVENT_DRAW_MAIN_END, NULL);
+}
+
+/* ---- The tiles: the stations of the band, those that called us in the last 3 minutes first (red), then the CQs
+ * of a new country, the CQs, the CQs worked, the others in a QSO; the strongest first in each. A tile: flag, call,
+ * signal, country and distance, a tag. The MFK goes from tile to tile, its press calls the station as a press on
+ * its last row would; a touch too. The list stays under them, hidden, and keeps the keys ---- */
+
+#define BOARD_COLS  3
+#define BOARD_ROWS  3
+#define BOARD_N     (BOARD_COLS * BOARD_ROWS)
+#define BARS        5
+
+typedef struct {
+    lv_obj_t *box, *flag, *call, *info, *tag, *bar[BARS];
+} card_t;
+
+static card_t         cards[BOARD_N];
+static lv_obj_t      *board_note;       /* "Listening..." with no station, the page with more than a board */
+static ft8_station_t *board_st[ST_MAX];
+static int            board_n, board_sel, board_first;
+
+static int st_rank(const ft8_station_t *st) {
+    if (to_me_fresh(st)) return 0;
+    if (st->cd.cell_type == CELL_RX_CQ && st->cd.new_dxcc) return 1;
+    if (st->cd.cell_type == CELL_RX_CQ && st->cd.worked_type == SEARCH_WORKED_NO) return 2;
+    if (st->cd.cell_type == CELL_RX_CQ) return 3;
+    return 4;
+}
+
+static int board_order(const void *a, const void *b) {
+    const ft8_station_t *x = *(ft8_station_t *const *)a, *y = *(ft8_station_t *const *)b;
+    int                  rx = st_rank(x), ry = st_rank(y);
+
+    if (rx != ry) return rx - ry;
+    if (!rx) return (int)lv_tick_elaps(x->to_me_at) - (int)lv_tick_elaps(y->to_me_at);   /* the newest call first */
+    return y->cd.meta.local_snr - x->cd.meta.local_snr;
+}
+
+static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
+    const cell_data_t *cd    = &st->cd;
+    bool               fresh = to_me_fresh(st);
+
+    lv_obj_clear_flag(c->box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_color(c->box, fresh ? TC(row_to_me) : TC(row), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(c->box, sel ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+
+    const lv_img_dsc_t *f = table_view_flag(cd->flag);
+    if (f) {
+        lv_img_set_src(c->flag, f);
+        lv_obj_clear_flag(c->flag, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(c->flag, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_label_set_text(c->call, cd->meta.call_de);
+
+    char info[48] = "";
+    if (cd->country[0]) snprintf(info, sizeof(info), "%s", cd->country);
+    if (cd->dist > 0) {
+        bool miles = decode_list_miles();
+        snprintf(info + strlen(info), sizeof(info) - strlen(info), "%s%d %s", info[0] ? "  " : "",
+                 miles ? (int)(cd->dist * 0.621371f + 0.5f) : cd->dist, miles ? "mi" : "km");
+    }
+    lv_label_set_text(c->info, info);
+
+    /* their signal as we hear it, -24 dB one bar to -4 dB five */
+    int lit = (cd->meta.local_snr + 29) / 5;
+    for (int b = 0; b < BARS; b++) lv_obj_set_style_bg_color(c->bar[b], b < lit ? TC(ok) : TC(line), LV_PART_MAIN);
+
+    char       tag[32];
+    lv_color_t col = TC(text_mute);
+    if (fresh && st->has_report) {
+        snprintf(tag, sizeof(tag), "calls you %+03d", st->report);
+        col = TC(err);
+    } else if (fresh) {
+        snprintf(tag, sizeof(tag), "calls you");
+        col = TC(err);
+    } else if (st->to_me_at) {
+        snprintf(tag, sizeof(tag), "called you");
+    } else if (cd->cell_type == CELL_RX_CQ && cd->new_dxcc) {
+        snprintf(tag, sizeof(tag), "NEW");
+        col = TC(warn);
+    } else if (cd->cell_type == CELL_RX_CQ && cd->worked_type == SEARCH_WORKED_NO) {
+        snprintf(tag, sizeof(tag), cd->pota ? "CQ POTA" : "CQ");
+        col = TC(ok);
+    } else if (cd->cell_type == CELL_RX_CQ) {
+        snprintf(tag, sizeof(tag), "worked");
+    } else {
+        snprintf(tag, sizeof(tag), "QSO");
+    }
+    lv_label_set_text(c->tag, tag);
+    lv_obj_set_style_text_color(c->tag, col, LV_PART_MAIN);
+}
+
+static void board_update(void) {
+    if (!board || !board_on) return;
+    stations_drop_old();
+    board_n = st_n;
+    for (int i = 0; i < st_n; i++) board_st[i] = &st_all[i];
+    qsort(board_st, board_n, sizeof(board_st[0]), board_order);
+
+    /* the tile selected follows its station when the order changes */
+    board_sel = -1;
+    for (int k = 0; k < board_n; k++)
+        if (board_sel_call[0] && !strcmp(board_st[k]->cd.meta.call_de, board_sel_call)) board_sel = k;
+    if (board_sel >= 0) board_first = board_sel / BOARD_N * BOARD_N;
+    if (board_first >= board_n) board_first = 0;
+
+    for (int i = 0; i < BOARD_N; i++) {
+        int k = board_first + i;
+        if (k < board_n) card_show(&cards[i], board_st[k], k == board_sel);
+        else lv_obj_add_flag(cards[i].box, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (!board_n) {
+        lv_label_set_text(board_note, "Listening... the stations heard come here");
+        lv_obj_align(board_note, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_clear_flag(board_note, LV_OBJ_FLAG_HIDDEN);
+    } else if (board_n > BOARD_N) {
+        lv_label_set_text_fmt(board_note, "%d/%d", board_first / BOARD_N + 1, (board_n + BOARD_N - 1) / BOARD_N);
+        lv_obj_align(board_note, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_clear_flag(board_note, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(board_note, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/* The MFK on the tiles: the next one, the board's page following it */
+static void board_move(int step) {
+    if (!board_n) return;
+    int k = board_sel >= 0 ? (board_sel + step + board_n) % board_n : 0;
+    snprintf(board_sel_call, sizeof(board_sel_call), "%s", board_st[k]->cd.meta.call_de);
+    lv_finder_set_cursor(finder, board_st[k]->cd.meta.freq_hz);
+    board_update();
+    lane_update();
+}
+
+static void board_call(int k) {
+    if (k < 0 || k >= board_n) return;
+    cell_data_t cd = board_st[k]->cd;   /* a copy: the call may bring new rows, and the tiles move */
+    list_pressed(&cd);
+}
+
+static bool board_key(uint32_t key) {
+    if (!board_on) return false;
+    if (key == LV_KEY_LEFT || key == LV_KEY_UP) board_move(-1);
+    else if (key == LV_KEY_RIGHT || key == LV_KEY_DOWN) board_move(1);
+    else return false;
+    return true;
+}
+
+static bool board_press(void) {
+    if (!board_on) return false;
+    if (board_sel < 0) board_move(0);   /* the first press picks the first tile; the next calls it */
+    else board_call(board_sel);
+    return true;
+}
+
+static void card_clicked_cb(lv_event_t *e) {
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    int k = board_first + i;
+
+    if (k >= board_n) return;
+    snprintf(board_sel_call, sizeof(board_sel_call), "%s", board_st[k]->cd.meta.call_de);
+    board_update();
+    board_call(k);
+}
+
+static void board_show(bool on) {
+    board_on = on;
+    if (!board) return;
+    if (on) {
+        lv_obj_clear_flag(board, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(table_view_obj(), LV_OBJ_FLAG_HIDDEN);
+        board_update();
+    } else {
+        lv_obj_add_flag(board, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(table_view_obj(), LV_OBJ_FLAG_HIDDEN);
+    }
+    lane_update();
+}
+
+static void build_board(lv_coord_t y, lv_coord_t h) {
+    lv_obj_t *b = board = lv_obj_create(dialog.obj);
+
+    lv_obj_remove_style_all(b);
+    lv_obj_set_size(b, WIDTH, h);
+    lv_obj_set_pos(b, 13, y);
+    lv_obj_set_style_bg_color(b, TC(panel), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(b, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_coord_t cw = (WIDTH - (BOARD_COLS - 1) * 6) / BOARD_COLS;
+    lv_coord_t ch = (h - 14 - (BOARD_ROWS - 1) * 4) / BOARD_ROWS;
+
+    for (int i = 0; i < BOARD_N; i++) {
+        card_t   *c   = &cards[i];
+        lv_obj_t *box = c->box = lv_obj_create(b);
+        lv_obj_remove_style_all(box);
+        lv_obj_set_size(box, cw, ch);
+        lv_obj_set_pos(box, (i % BOARD_COLS) * (cw + 6), 2 + (i / BOARD_COLS) * (ch + 4));
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(box, 8, LV_PART_MAIN);
+        lv_obj_set_style_border_width(box, 3, LV_PART_MAIN);
+        lv_obj_set_style_border_color(box, TC(warn), LV_PART_MAIN);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(box, card_clicked_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
+        c->flag = lv_img_create(box);
+        lv_img_set_zoom(c->flag, 384);  /* 24 x 18 */
+        lv_obj_set_pos(c->flag, 12, 8);
+
+        c->call = lv_label_create(box);
+        lv_obj_set_style_text_font(c->call, &sony_22, LV_PART_MAIN);
+        lv_obj_set_style_text_color(c->call, TC(text), LV_PART_MAIN);
+        lv_obj_set_pos(c->call, 40, 2);
+
+        for (int k = 0; k < BARS; k++) {
+            lv_obj_t *bar = c->bar[k] = lv_obj_create(box);
+            lv_obj_remove_style_all(bar);
+            lv_obj_set_size(bar, 4, 4 + k * 3);
+            lv_obj_set_pos(bar, cw - 44 + k * 6, 22 - k * 3);
+            lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+        }
+
+        c->info = lv_label_create(box);
+        lv_label_set_long_mode(c->info, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(c->info, cw - 120);
+        lv_obj_set_style_text_font(c->info, &sony_16, LV_PART_MAIN);
+        lv_obj_set_style_text_color(c->info, TC(text_mute), LV_PART_MAIN);
+        lv_obj_set_pos(c->info, 8, ch - 24);
+
+        c->tag = lv_label_create(box);
+        lv_obj_set_style_text_font(c->tag, &sony_16, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(c->tag, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(c->tag, LV_OPA_60, LV_PART_MAIN);
+        lv_obj_set_style_radius(c->tag, 8, LV_PART_MAIN);
+        lv_obj_set_style_pad_hor(c->tag, 6, LV_PART_MAIN);
+        lv_obj_align(c->tag, LV_ALIGN_BOTTOM_RIGHT, -6, -3);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    board_note = lv_label_create(b);
+    lv_obj_set_style_text_font(board_note, &sony_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(board_note, TC(text_mute), LV_PART_MAIN);
+
+    board_n           = 0;
+    board_sel         = -1;
+    board_first       = 0;
+    board_sel_call[0] = '\0';
+    lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ---- WSJT-X's UDP messages for loggers (GridTracker, JTAlert...): ft8_udp.c, after SP2KMO's
@@ -369,6 +790,7 @@ static void save_qso_apply(void *arg) {
     saved_job_t *j = arg;
 
     dialog_field_day_log(&j->rec);
+    dxcc_add_call(j->rec.remote_call, NULL);   /* its country is worked now */
     ui_apply(&j->ui);
 }
 
@@ -620,6 +1042,7 @@ static void clear_view(void) {
     static uint32_t up = LV_KEY_UP;
 
     table_view_reset();
+    stations_clear();
     lv_waterfall_clear_data(waterfall);
     lv_event_send(table_view_obj(), LV_EVENT_KEY, &up);
 }
@@ -678,6 +1101,7 @@ static void set_tx_freq(int32_t hz) {
     lv_finder_set_value(finder, hz);
     lv_obj_invalidate(finder);
     freq_strip_set_offset(hz);
+    lane_update();
 }
 
 /* The TX frequency as far as the signal stays inside the filter */
@@ -777,11 +1201,6 @@ static const char *auto_label(void) {
     return switch_label(buf, sizeof(buf), "Auto", param_i_get(cfg_ft8_auto));
 }
 
-static const char *foryou_label(void) {
-    static char buf[32];
-    return switch_label(buf, sizeof(buf), "For you", param_i_get(cfg_ft8_foryou));
-}
-
 static const char *freq_label(void) {
     static char buf[32];
     if (!params.ft8_custom_on.x) return "Freq:\nPreset";
@@ -804,6 +1223,25 @@ static const char *retries_label(void) {
 static void show_cb(button_data_t *btn) {
     if (kb_open) return;
     param_i_set(cfg_ft8_show_all, !param_i_get(cfg_ft8_show_all));
+}
+
+static void foryou_cb(button_data_t *btn);
+
+/* Show held: the "For you" strip on or off */
+static void show_hold_cb(button_data_t *btn) {
+    foryou_cb(btn);
+    msg_schedule_text_fmt("For you strip: %s", param_i_get(cfg_ft8_foryou) ? "on" : "off");
+}
+
+/* View: the traffic (the list) or the tiles */
+static const char *view_label(void) {
+    return board_on ? "View:\nTiles" : "View:\nTraffic";
+}
+
+static void view_cb(button_data_t *btn) {
+    if (kb_open) return;
+    board_show(!board_on);
+    buttons_refresh(btn);
 }
 
 /* FT8 -> FT4 -> FT2 -> FT8 */
@@ -994,6 +1432,8 @@ static void map_cb(button_data_t *btn) {
     map_open(false);
 }
 
+static void heard_map_cb(button_data_t *btn);
+
 /* The stations decoded in the last 15 minutes, from their grid */
 static void heard_map_cb(button_data_t *btn) {
     map_open(true);
@@ -1165,40 +1605,35 @@ static void foryou_cb(button_data_t *btn) {
     table_view_pin_clear();
 }
 
-static buttons_page_t page_1, page_2, page_3, page_4, page_5;
+static buttons_page_t page_1, page_2, page_3, page_4;
 
-/* The labels show the state now; a press changes it */
-static button_data_t button_page_1  = {.type = BTN_TEXT, .label = "(FT8 1:5)", .press = button_next_page_cb, .next = &page_2};
-static button_data_t button_show    = {.type = BTN_TEXT_FN, .label_fn = show_label, .press = show_cb};
-static button_data_t button_mode    = {.type = BTN_TEXT_FN, .label_fn = mode_label, .press = mode_cb};
+/* Operate, the QSO, the band, the tools */
+static button_data_t button_page_1  = {.type = BTN_TEXT, .label = "(FT8 1:4)", .press = button_next_page_cb, .next = &page_2};
 static button_data_t button_tx_cq   = {.type = BTN_TEXT_FN, .label_fn = tx_cq_label, .press = tx_cq_cb};
 static button_data_t button_tx_call = {.type = BTN_TEXT_FN, .label_fn = tx_call_label, .press = tx_call_cb};
+static button_data_t button_show    = {.type = BTN_TEXT_FN, .label_fn = show_label, .press = show_cb, .hold = show_hold_cb};
+static button_data_t button_view    = {.type = BTN_TEXT_FN, .label_fn = view_label, .press = view_cb};
 
-static button_data_t button_page_2  = {.type = BTN_TEXT, .label = "(FT8 2:5)", .press = button_next_page_cb, .next = &page_3};
-static button_data_t button_hold    = {.type = BTN_TEXT_FN, .label_fn = hold_label, .press = hold_cb};
+static button_data_t button_page_2  = {.type = BTN_TEXT, .label = "(FT8 2:4)", .press = button_next_page_cb, .next = &page_3};
 static button_data_t button_auto    = {.type = BTN_TEXT_FN, .label_fn = auto_label, .press = auto_cb};
+static button_data_t button_hold    = {.type = BTN_TEXT_FN, .label_fn = hold_label, .press = hold_cb};
+static button_data_t button_retries = {.type = BTN_TEXT_FN, .label_fn = retries_label, .press = retries_cb};
 static button_data_t button_force   = {.type = BTN_TEXT, .label = "Force QSO\nsave", .press = force_save_cb};
 
-static button_data_t button_page_3  = {.type = BTN_TEXT, .label = "(FT8 3:5)", .press = button_next_page_cb, .next = &page_4};
-static button_data_t button_cq_mod  = {.type = BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb};
-static button_data_t button_sync    = {.type = BTN_TEXT, .label = "Time\nSync", .press = time_sync_cb};
-static button_data_t button_log_map = {.type = BTN_TEXT, .label = "Log\nMap", .press = map_cb};
-static button_data_t button_live_map = {.type = BTN_TEXT, .label = "Live\nMap", .press = heard_map_cb};
-
-static button_data_t button_page_4  = {.type = BTN_TEXT, .label = "(FT8 4:5)", .press = button_next_page_cb, .next = &page_5};
+static button_data_t button_page_3  = {.type = BTN_TEXT, .label = "(FT8 3:4)", .press = button_next_page_cb, .next = &page_4};
+static button_data_t button_mode    = {.type = BTN_TEXT_FN, .label_fn = mode_label, .press = mode_cb};
 static button_data_t button_freq    = {.type = BTN_TEXT_FN, .label_fn = freq_label, .press = freq_cb, .hold = freq_hold_cb};
 static button_data_t button_hound   = {.type = BTN_TEXT_FN, .label_fn = hound_label, .press = hound_cb};
-static button_data_t button_retries = {.type = BTN_TEXT_FN, .label_fn = retries_label, .press = retries_cb};
-static button_data_t button_foryou  = {.type = BTN_TEXT_FN, .label_fn = foryou_label, .press = foryou_cb};
 
-/* TUNE for an external tuner: a tone at the TX offset, where the app transmits (ext_tune.h) */
-static button_data_t button_page_5  = {.type = BTN_TEXT, .label = "(FT8 5:5)", .press = button_next_page_cb, .next = &page_1};
+static button_data_t button_page_4  = {.type = BTN_TEXT, .label = "(FT8 4:4)", .press = button_next_page_cb, .next = &page_1};
+static button_data_t button_cq_mod  = {.type = BTN_TEXT, .label = "CQ\nModifier", .press = cq_modifier_cb};
+static button_data_t button_sync    = {.type = BTN_TEXT, .label = "Time\nSync", .press = time_sync_cb};
+static button_data_t button_map     = {.type = BTN_TEXT, .label = "Map\n(hold: Log)", .press = heard_map_cb, .hold = map_cb};
 
-static buttons_page_t page_1 = {{&button_page_1, &button_show, &button_mode, &button_tx_cq, &button_tx_call}};
-static buttons_page_t page_2 = {{&button_page_2, &button_hold, &button_auto, &button_force, &btn_dig_pwr}};
-static buttons_page_t page_3 = {{&button_page_3, &button_cq_mod, &button_sync, &button_log_map, &button_live_map}};
-static buttons_page_t page_4 = {{&button_page_4, &button_freq, &button_hound, &button_retries, &button_foryou}};
-static buttons_page_t page_5 = {{&button_page_5, &btn_ext_tune}};
+static buttons_page_t page_1 = {{&button_page_1, &button_tx_cq, &button_tx_call, &button_show, &button_view}};
+static buttons_page_t page_2 = {{&button_page_2, &button_auto, &button_hold, &button_retries, &button_force}};
+static buttons_page_t page_3 = {{&button_page_3, &button_mode, &button_freq, &button_hound, &btn_dig_pwr}};
+static buttons_page_t page_4 = {{&button_page_4, &button_cq_mod, &button_sync, &button_map, &btn_ext_tune}};
 
 /* ---- keyboard window ---- */
 
@@ -1693,7 +2128,6 @@ static void construct_cb(lv_obj_t *parent) {
     button_mode.subj    = (Subject *)cfg_ft8_protocol;
     button_hold.subj    = (Subject *)cfg_ft8_hold_freq;
     button_auto.subj    = (Subject *)cfg_ft8_auto;
-    button_foryou.subj  = (Subject *)cfg_ft8_foryou;
     button_retries.subj = (Subject *)cfg_ft8_max_repeats;
 
     /* TX CQ starts off each time, TX Call as it was left */
@@ -1713,16 +2147,17 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_add_style(waterfall, &waterfall_style, 0);
     lv_obj_clear_flag(waterfall, LV_OBJ_FLAG_SCROLLABLE);
     lv_waterfall_set_palette(waterfall, (lv_color_t *)wf_palette, 256);
-    lv_waterfall_set_size(waterfall, WIDTH, WF_HEIGHT);
+    lv_waterfall_set_size(waterfall, WIDTH, WF_HEIGHT - LANE_H);
     lv_waterfall_set_min(waterfall, 0);    /* above the noise floor (on_psd), as JS8 */
     lv_waterfall_set_max(waterfall, 30);
-    lv_obj_set_pos(waterfall, 13, 13);
+    lv_obj_set_pos(waterfall, 13, 13 + LANE_H);
+    build_lane();
 
     finder = lv_finder_create(waterfall);
     lv_finder_set_width(finder, protos[FTX_PROTOCOL_FT8].width_hz);
     lv_finder_set_value(finder, params.ft8_tx_freq.x);
     freq_strip_set_offset(params.ft8_tx_freq.x);
-    lv_obj_set_size(finder, WIDTH, WF_HEIGHT);
+    lv_obj_set_size(finder, WIDTH, WF_HEIGHT - LANE_H);
     lv_obj_set_pos(finder, 0, 0);
     lv_obj_set_style_radius(finder, 0, LV_PART_MAIN);
     lv_obj_set_style_border_width(finder, 0, LV_PART_MAIN);
@@ -1734,9 +2169,17 @@ static void construct_cb(lv_obj_t *parent) {
     lv_obj_set_style_border_opa(finder, LV_OPA_50, LV_PART_INDICATOR);
 
     /* See-through: the waterfall's top rows clear above it, the rest visible under it */
-    table_view_build(dialog.obj, 13, 13 + WF_VISIBLE, WIDTH, WF_HEIGHT - WF_VISIBLE);
+    table_view_build(dialog.obj, 13, 13 + LANE_H + WF_VISIBLE, WIDTH, WF_HEIGHT - LANE_H - WF_VISIBLE);
     table_view_set_press_cb(list_pressed);
-    table_view_set_actions(&(table_view_actions_t){.on_close = list_close, .on_vol_change = list_vol});
+    table_view_set_actions(&(table_view_actions_t){.on_close = list_close, .on_vol_change = list_vol,
+                                                   .on_key = board_key, .on_press = board_press});
+
+    /* The tiles over the list, the traffic first (F4OLI); the countries of the log for their NEW */
+    st_n     = 0;
+    worked_n = 0;
+    qso_log_each_call(dxcc_add_call, NULL);
+    build_board(13 + LANE_H + WF_VISIBLE, WF_HEIGHT - LANE_H - WF_VISIBLE);
+    board_show(false);
 
     lv_anim_init(&fade);
     lv_anim_set_var(&fade, table_view_obj());
@@ -1782,6 +2225,8 @@ static void construct_cb(lv_obj_t *parent) {
 
 static void destruct_cb(void) {
     map_obj   = NULL;   /* deleted with the dialog */
+    lane      = NULL;
+    board     = NULL;
     freq_list = NULL;
     kb_close();
     decoder_stop();

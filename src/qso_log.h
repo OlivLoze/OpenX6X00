@@ -86,3 +86,8 @@ qso_log_search_worked_t qso_log_search_worked(const char *callsign, qso_log_mode
 
 
 qso_log_band_t qso_log_freq_to_band(uint64_t freq_hz);
+
+/**
+ * Each call of the log once (canonized, any band or mode): fn(call, ud). Returns how many, -1 on an error.
+ */
+int qso_log_each_call(void (*fn)(const char *call, void *ud), void *ud);

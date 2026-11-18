@@ -31,6 +31,7 @@ typedef enum {
     CELL_RX_CQ,
     CELL_RX_TO_ME,
     CELL_TX_MSG,
+    CELL_SLOT_SEP,      /* the list's own line over a slot's rows: "18:59:15" */
 } ft8_cell_type_t;
 
 /* One row: its text and, for a decode, what a press on it needs */
@@ -45,12 +46,15 @@ typedef struct {
     char                    cty_prefix[8];  /* its primary prefix ("DL") */
     int16_t                 flag;           /* its flag in flags.h, -1 none */
     bool                    pota;           /* spotted on POTA now, or a CQ POTA */
+    bool                    new_dxcc;       /* a country not in the log yet (the window sets it) */
 } cell_data_t;
 
 /* What the window does on keys the list gets */
 typedef struct {
     void (*on_close)(void);             /* ESC */
     void (*on_vol_change)(int32_t dir); /* VOL turned: -1 / +1 */
+    bool (*on_key)(uint32_t key);       /* first look at a key (the tiles over the hidden list): true, it's taken */
+    bool (*on_press)(void);             /* first look at an MFK press: true, it's taken */
 } table_view_actions_t;
 
 /* A press on the list: the row's data, NULL on the "Wait sync" row */

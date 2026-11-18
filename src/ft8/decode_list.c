@@ -16,6 +16,7 @@
 #include "../events.h"
 #include "../flags.h"
 #include "../styles.h"
+#include "../gui_styles.h"
 #include "../theme.h"
 
 /* The list keeps up to KEEP_ROWS rows; one more and the oldest DROP_ROWS go together, so the
@@ -75,6 +76,25 @@ static cell_data_t *row_data(lv_obj_t *obj, uint32_t r) {
 static bool is_slot_row(const cell_data_t *cd) {
     return cd->cell_type == CELL_RX_INFO;
 }
+
+/* A decode or our TX starts with its time, "18:59:15 CQ ...": the slot line over them has it */
+static bool has_time(const cell_data_t *cd) {
+    return cd->cell_type == CELL_RX_MSG || cd->cell_type == CELL_RX_CQ || cd->cell_type == CELL_RX_TO_ME ||
+           cd->cell_type == CELL_TX_MSG;
+}
+
+static const char *list_text(const cell_data_t *cd) {
+    size_t n = strlen(cd->text);
+    return has_time(cd) && n > 9 && cd->text[2] == ':' && cd->text[8] == ' ' ? cd->text + 9 : cd->text;
+}
+
+/* Seconds of the day of a row's "HH:MM:SS", -1 none */
+static int row_secs(const char *t) {
+    if (strlen(t) < 8 || t[2] != ':' || t[5] != ':') return -1;
+    return ((t[0] - '0') * 10 + t[1] - '0') * 3600 + ((t[3] - '0') * 10 + t[4] - '0') * 60 + (t[6] - '0') * 10 + t[7] - '0';
+}
+
+static int sep_secs = -1;   /* the time of the last slot line, -1 none yet */
 
 /* ---- the pin table ---- */
 
@@ -227,7 +247,7 @@ static void drop_oldest(void) {
 
     list_rows.n -= DROP_ROWS;
     memmove(&list_rows.cd[0], &list_rows.cd[DROP_ROWS], list_rows.n * sizeof(list_rows.cd[0]));
-    for (uint16_t r = 0; r < list_rows.n; r++) lv_table_set_cell_value(list, r, 0, list_rows.cd[r].text);
+    for (uint16_t r = 0; r < list_rows.n; r++) lv_table_set_cell_value(list, r, 0, list_text(&list_rows.cd[r]));
     lv_table_set_row_cnt(list, list_rows.n);
     lv_obj_scroll_by_bounded(list, 0, gone_h, LV_ANIM_OFF);
 }
@@ -243,6 +263,7 @@ void table_view_push_ui(const cell_data_t *cd) {
 
     bool      follow = list_rows.n == sel_row + 1;
     uint16_t  r      = list_rows.n;
+    uint16_t  was_n  = list_rows.n;
     cell_data_t *last = r ? &list_rows.cd[r - 1] : NULL;
 
     if (last && is_slot_row(last)) {
@@ -255,10 +276,24 @@ void table_view_push_ui(const cell_data_t *cd) {
         r--;    /* a message takes its place: the slot row only shows that receiving goes on */
     }
 
+    /* A slot's rows under a line with its time: a decode or our TX 3 s or more from the last line starts a new one
+     * (FT4's TX starts a second into its slot, FT2's slots are 3.75 s) */
+    int t = has_time(cd) ? row_secs(cd->text) : -1;
+    if (t >= 0 && (sep_secs < 0 || abs(t - sep_secs) >= 3)) {
+        cell_data_t *sep = &list_rows.cd[r];
+        memset(sep, 0, sizeof(*sep));
+        sep->cell_type = CELL_SLOT_SEP;
+        sep->flag      = -1;
+        snprintf(sep->text, sizeof(sep->text), "%.8s", cd->text);
+        lv_table_set_cell_value(list, r, 0, sep->text);
+        sep_secs = t;
+        r++;
+    }
+
     list_rows.cd[r] = *cd;
     list_rows.cd[r].text[sizeof(cd->text) - 1] = '\0';
     list_rows.n = r + 1;
-    lv_table_set_cell_value(list, r, 0, list_rows.cd[r].text);
+    lv_table_set_cell_value(list, r, 0, list_text(&list_rows.cd[r]));
 
     if (cd->cell_type == CELL_RX_TO_ME) pin_message(cd);
     else if (cd->cell_type == CELL_TX_MSG) pin_sent(cd->text);
@@ -266,7 +301,8 @@ void table_view_push_ui(const cell_data_t *cd) {
     if (follow) {
         static uint32_t down = LV_KEY_DOWN;
         pin.own_key = true;
-        lv_event_send(list, LV_EVENT_KEY, &down);
+        int added = (int)list_rows.n - (int)was_n;     /* 0 when a message took the slot row's place */
+        for (int k = 0; k < (added > 1 ? added : 1); k++) lv_event_send(list, LV_EVENT_KEY, &down);
         pin.own_key = false;
     }
 }
@@ -279,6 +315,7 @@ void table_view_add_msg_cb(void *data) {
 void table_view_reset(void) {
     if (!list) return;
     list_rows.n = 0;
+    sep_secs    = -1;
     lv_table_set_row_cnt(list, 1);
     lv_table_set_cell_value(list, 0, 0, EMPTY_TEXT);
     pin.n = 0;      /* another band or mode: the callers of the old one are gone */
@@ -300,21 +337,28 @@ static void draw_row_cb(lv_event_t *e) {
     lv_draw_rect_dsc_t  *rect  = dsc->rect_dsc;
     lv_draw_label_dsc_t *label = dsc->label_dsc;
 
+    /* Plain rows, the CQs bright with a green edge and tag (draw_extras_cb), the others' QSOs grey: a CQ to answer
+     * stands out of the traffic; to us red, ours blue */
     rect->bg_opa = obj == pin.obj ? LV_OPA_80 : 115;
-    if (!cd || cd->cell_type == CELL_RX_INFO || cd->cell_type == CELL_START_QSO) {
+    if (cd && cd->cell_type == CELL_SLOT_SEP) {
+        label->align   = LV_TEXT_ALIGN_CENTER;
+        label->color   = TC(text_mute);
+        rect->bg_color = TC(panel);
+    } else if (!cd || cd->cell_type == CELL_RX_INFO || cd->cell_type == CELL_START_QSO) {
         label->align  = LV_TEXT_ALIGN_CENTER;
         rect->bg_color = TC(row);
     } else if (cd->cell_type == CELL_RX_CQ) {
-        if (cd->worked_type == SEARCH_WORKED_NO) {
-            rect->bg_color = TC(ft8_cq);
-        } else if (cd->worked_type == SEARCH_WORKED_YES) {     /* on another band or mode */
-            label->opa     = LV_OPA_90;
-            rect->bg_color = TC(ft8_cq_worked);
+        rect->bg_color = TC(panel);
+        label->color   = TC(text);
+        if (cd->worked_type == SEARCH_WORKED_YES) {     /* on another band or mode */
+            label->opa = LV_OPA_80;
         } else if (cd->worked_type == SEARCH_WORKED_SAME_MODE) {
-            label->decor   = LV_TEXT_DECOR_STRIKETHROUGH;
-            label->opa     = LV_OPA_80;
-            rect->bg_color = TC(ft8_cq_same);
+            label->decor = LV_TEXT_DECOR_STRIKETHROUGH;
+            label->opa   = LV_OPA_60;
         }
+    } else if (cd->cell_type == CELL_RX_MSG) {
+        rect->bg_color = TC(panel);
+        label->color   = TC(text_mute);
     } else if (cd->cell_type == CELL_RX_TO_ME) {
         rect->bg_color = TC(ft8_to_me);
     } else if (cd->cell_type == CELL_TX_MSG) {
@@ -429,6 +473,49 @@ static lv_coord_t draw_pota(lv_obj_draw_part_dsc_t *dsc, const lv_area_t *row, l
     return tag.x2 + 3;
 }
 
+/* A tag after the message, small, in its colour on black; returns where it ends */
+static lv_coord_t draw_tag(lv_obj_draw_part_dsc_t *dsc, const lv_area_t *row, lv_coord_t x, const char *text, lv_color_t col) {
+    lv_draw_label_dsc_t ld = *dsc->label_dsc;
+    lv_draw_rect_dsc_t  box;
+    lv_area_t           a;
+    lv_coord_t          h = lv_font_get_line_height(&sony_16);
+
+    ld.font    = &sony_16;
+    ld.color   = col;
+    ld.opa     = LV_OPA_COVER;
+    ld.decor   = LV_TEXT_DECOR_NONE;
+    ld.align   = LV_TEXT_ALIGN_LEFT;
+    lv_draw_rect_dsc_init(&box);
+    box.bg_color = lv_color_black();
+    box.bg_opa   = LV_OPA_70;
+    box.radius   = 4;
+    a.x1 = x + 12;
+    a.x2 = a.x1 + text_width(text, &ld) + 11;
+    a.y1 = (row->y1 + row->y2 - h) / 2 - 1;
+    a.y2 = a.y1 + h + 1;
+    lv_draw_rect(dsc->draw_ctx, &box, &a);
+    a.x1 += 6;
+    a.y1 += 1;
+    lv_draw_label(dsc->draw_ctx, &ld, &a, text, NULL);
+    return a.x2;
+}
+
+/* The slot line: its time in the middle, a rule on each side */
+static void draw_sep(lv_obj_draw_part_dsc_t *dsc, const cell_data_t *cd) {
+    const lv_area_t   *row = dsc->draw_area;
+    lv_coord_t         w   = text_width(cd->text, dsc->label_dsc);
+    lv_coord_t         mid = (row->x1 + row->x2) / 2, y = (row->y1 + row->y2) / 2;
+    lv_draw_line_dsc_t ln;
+
+    lv_draw_line_dsc_init(&ln);
+    ln.color = TC(line);
+    ln.width = 1;
+    lv_point_t a1 = {row->x1 + 8, y}, a2 = {mid - w / 2 - 12, y};
+    lv_point_t b1 = {mid + w / 2 + 12, y}, b2 = {row->x2 - 8, y};
+    lv_draw_line(dsc->draw_ctx, &ln, &a1, &a2);
+    lv_draw_line(dsc->draw_ctx, &ln, &b1, &b2);
+}
+
 bool decode_list_miles(void) {
     int32_t info = param_i_get(cfg_ft8_info);
 
@@ -442,10 +529,24 @@ static void draw_extras_cb(lv_event_t *e) {
 
     if (dsc->part != LV_PART_ITEMS) return;
 
-    cell_data_t *cd = row_data(obj, dsc->id / lv_table_get_col_cnt(obj));
+    uint32_t     r  = dsc->id / lv_table_get_col_cnt(obj);
+    cell_data_t *cd = row_data(obj, r);
 
+    if (cd && cd->cell_type == CELL_SLOT_SEP) {
+        draw_sep(dsc, cd);
+        return;
+    }
     if (!cd || (cd->cell_type != CELL_RX_MSG && cd->cell_type != CELL_RX_CQ && cd->cell_type != CELL_RX_TO_ME))
         return;
+    if (cd->cell_type == CELL_RX_CQ && !theme_shape.mono) {     /* the CQ's green edge */
+        lv_draw_rect_dsc_t edge;
+        lv_area_t          e = *dsc->draw_area;
+        lv_draw_rect_dsc_init(&edge);
+        edge.bg_color = TC(ok);
+        edge.bg_opa   = cd->worked_type == SEARCH_WORKED_NO ? LV_OPA_COVER : LV_OPA_50;
+        e.x2          = e.x1 + 4;
+        lv_draw_rect(dsc->draw_ctx, &edge, &e);
+    }
 
     char      buf[64];
     lv_area_t area;
@@ -460,8 +561,11 @@ static void draw_extras_cb(lv_event_t *e) {
 
     lv_coord_t right    = area.x1 - 10;
     lv_coord_t text_end = dsc->draw_area->x1 + lv_obj_get_style_pad_left(obj, LV_PART_ITEMS) +
-                          text_width(cd->text, dsc->label_dsc);
+                          text_width(lv_table_get_cell_value(obj, r, 0), dsc->label_dsc);
 
+    if (cd->new_dxcc && cd->cell_type != CELL_RX_MSG) text_end = draw_tag(dsc, &area, text_end, "NEW", TC(warn));
+    else if (cd->cell_type == CELL_RX_CQ && cd->worked_type == SEARCH_WORKED_NO) text_end = draw_tag(dsc, &area, text_end, "CQ", TC(ok));
+    else if (cd->cell_type == CELL_RX_CQ) text_end = draw_tag(dsc, &area, text_end, "worked", TC(text_mute));
     if (cd->pota) text_end = draw_pota(dsc, &area, text_end);
 
     /* Settings > FT8/FT4 info: 0 km, 1 mi, 2 country, 3 country + km, 4 country + mi (from SP2KMO's upstream 3074180e) */
@@ -486,6 +590,7 @@ static void pressed_cb(lv_event_t *e) {
     uint16_t r, c;
 
     if (!press_cb) return;
+    if (lv_event_get_target(e) == list && actions.on_press && actions.on_press()) return;
     if (lv_event_get_target(e) == pin.obj) {    /* touched */
         lv_table_get_selected_cell(pin.obj, &r, &c);
         if (r < pin.n) press_cb(&pin.cd[r]);
@@ -565,6 +670,7 @@ static void pin_follow_key(uint32_t key) {
 static void list_key_cb(lv_event_t *e) {
     uint32_t key = *(uint32_t *)lv_event_get_param(e);
 
+    if (!pin.own_key && actions.on_key && actions.on_key(key)) return;
     pin_follow_key(key);
     if (key == LV_KEY_ESC) {
         if (actions.on_close) actions.on_close();
