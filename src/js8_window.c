@@ -2684,6 +2684,7 @@ static void build_tx_bar(void) {
 #define BOARD_ROWS  3
 #define BOARD_N     (BOARD_COLS * BOARD_ROWS)
 #define BARS        5
+#define HEARD_FRESH_MS (3 * 60 * 1000)  /* a card red this long after their last answer, then a plain card */
 
 typedef struct {
     lv_obj_t *box, *flag, *call, *info, *tag, *bar[BARS];
@@ -2780,10 +2781,11 @@ static void card_show(card_t *c, const js8_station_t *st, bool sel)
 {
     const where_t *w   = station_where(st->call);
     int            n   = unread_of(st->call);
-    bool           you = st->heard_me;
+    bool           you   = st->heard_me;
+    bool           fresh = you && now_wall_ms() - st->heard_me_ms < HEARD_FRESH_MS;
 
     lv_obj_clear_flag(c->box, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(c->box, you ? TC(row_to_me) : TC(row), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(c->box, fresh ? TC(row_to_me) : TC(row), LV_PART_MAIN);
     lv_obj_set_style_border_opa(c->box, sel ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
 
     const lv_img_dsc_t *f = w ? table_view_flag(w->flag) : NULL;
@@ -2815,10 +2817,10 @@ static void card_show(card_t *c, const js8_station_t *st, bool sel)
         col = TC(warn);
     } else if (you && st->has_reported_snr) {
         snprintf(tag, sizeof(tag), "heard you %+d", st->reported_snr);
-        col = TC(err);
+        col = fresh ? TC(err) : TC(text_mute);
     } else if (you) {
         snprintf(tag, sizeof(tag), "heard you");
-        col = TC(err);
+        col = fresh ? TC(err) : TC(text_mute);
     } else if (role[0]) {
         snprintf(tag, sizeof(tag), "%s", role);
         col = !strcmp(role, "CQ") ? TC(ok) : TC(text_mute);
