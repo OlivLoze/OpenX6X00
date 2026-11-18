@@ -466,6 +466,7 @@ static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
                  miles ? (int)(cd->dist * 0.621371f + 0.5f) : cd->dist, miles ? "mi" : "km");
     }
     lv_label_set_text(c->info, info);
+    lv_obj_set_style_text_color(c->info, fresh ? TC(text) : TC(text_mute), LV_PART_MAIN);   /* grey on red: unreadable */
 
     /* their signal as we hear it, -24 dB one bar to -4 dB five */
     int lit = (cd->meta.local_snr + 29) / 5;
@@ -473,12 +474,12 @@ static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
 
     char       tag[32];
     lv_color_t col = TC(text_mute);
-    if (fresh && st->has_report) {
+    if (fresh && st->has_report) {      /* white: the tile is red already */
         snprintf(tag, sizeof(tag), "calls you %+03d", st->report);
-        col = TC(err);
+        col = TC(text);
     } else if (fresh) {
         snprintf(tag, sizeof(tag), "calls you");
-        col = TC(err);
+        col = TC(text);
     } else if (st->to_me_at) {
         snprintf(tag, sizeof(tag), "called you");
     } else if (cd->cell_type == CELL_RX_CQ && cd->new_dxcc) {
