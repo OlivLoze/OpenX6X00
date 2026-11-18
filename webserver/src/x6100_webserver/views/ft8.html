@@ -154,8 +154,8 @@ TX; a click on the waterfall moves our TX frequency there. TX off makes a dry ru
 and nothing keys the transmitter.</p>
 
 <script src="/static/js/radio_link.js?v=2"></script>
-<script src="/static/js/radio_session.js?v=8"></script>
-<script src="/static/js/app_wall.js?v=2"></script>
+<script src="/static/js/radio_session.js?v=10"></script>
+<script src="/static/js/app_wall.js?v=3"></script>
 <script>
 (function() {
   "use strict";
@@ -163,6 +163,10 @@ and nothing keys the transmitter.</p>
   const MYBASE = MYCALL.split("/").reduce(function(a, b) { return b.length > a.length ? b : a; }, "");
   const PROTOS = ["FT4", "FT8", "FT2"], WIDTHS = [83, 50, 42];   /* a signal's width, Hz */
   let radio = null, ft8 = null, ft8At = 0, state = null, stopped = false;
+  /* Opened on the radio by itself when nothing else is (RadioSession.autoOpen) */
+  const autoOpen = RadioSession.autoOpen({cmd: "ft8", names: ["FT8", "FT4"], label: "FT8", app: function() { return ft8; },
+    radio: function() { return state; }, can: function() { return radio ? radio.can() : "not connected"; },
+    send: function(s) { return !!radio && radio.send(s); }, status: function(t) { if (radio) radio.status(t); }});
   let openedAt = 0, skew = 0;      /* the radio's clock minus ours, from its slot rows */
   function status(text, error) { if (radio) radio.status(text, error); }
   function send(s) { return !!radio && radio.send(s); }
@@ -426,10 +430,11 @@ and nothing keys the transmitter.</p>
       $dec.children(":not(.thead)").remove(); $rx.children(":not(.thead)").remove(); lastSlot = {dec: "", rx: ""}; nDec = nRx = 0;
     },
     onText: function(head, body) {
-      if (head === "ft8") { ft8 = JSON.parse(body); ft8At = Date.now(); showFt8(); }
+      if (head === "ft8") { ft8 = JSON.parse(body); ft8At = Date.now(); showFt8(); autoOpen(); }
       else if (head === "ft8r") addRow(JSON.parse(body));
       else if (head === "state") {
         state = Object.assign(state || {}, JSON.parse(body));
+        autoOpen();
         const b = AppWall.band(state.freq);
         $("#where").text((state.freq / 1e6).toFixed(3) + " MHz" + (b ? " · " + b : ""));
       }

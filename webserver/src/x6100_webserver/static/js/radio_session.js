@@ -679,7 +679,36 @@
     this.show();
   };
 
-  window.RadioSession = {create: function(o) { return new Session(o); }, forRadio: forRadio, takeLink: takeLink,
+  /* An app page (FT8, JS8, WeFax) opens its app on the radio by itself, once: when the radio has no digital app
+   * open and this browser may operate (paired, control free or ours). Never over another app (an operator at the
+   * radio in JS8 keeps it: the page says Open switches) and never a dialog: what stops it is said on the status line.
+   * o: {cmd: "ft8", names: ["FT8", "FT4"], label, app() (the app's state), radio() (the radio's state), can(),
+   * send(s), status(text)}. Returns tick(), called on each message; the decision waits 1.5 s for the role */
+  function autoOpen(o) {
+    let done = false, first = 0, sent = 0;
+    function tick() {
+      if (sent) {                           /* our open: said done when the app says it is, the line freed after */
+        const a = o.app();
+        if (a && a.open) { sent = 0; o.status(o.label + " is open on the radio"); setTimeout(function() { o.status(""); }, 4000); }
+        else if (Date.now() - sent > 15000) { sent = 0; o.status(o.label + " did not open on the radio"); }
+        return;
+      }
+      if (done) return;
+      const a = o.app(), r = o.radio();
+      if (!a || !r) return;
+      if (a.open) { done = true; return; }
+      if (!first) { first = Date.now(); setTimeout(tick, 1600); return; }
+      if (Date.now() - first < 1500) return;
+      done = true;
+      if (r.app && o.names.indexOf(r.app) < 0) { o.status(r.app + " is open on the radio: Open switches it to " + o.label); return; }
+      const why = o.can();
+      if (why) { o.status(o.label + " is closed on the radio. " + why); return; }
+      if (o.send(o.cmd + " open")) { sent = Date.now(); o.status("Opening " + o.label + " on the radio..."); }
+    }
+    return tick;
+  }
+
+  window.RadioSession = {create: function(o) { return new Session(o); }, forRadio: forRadio, autoOpen: autoOpen, takeLink: takeLink,
                          token: function() { return load(TOKEN_KEY); }};
   window.RadioPtt = {create: function(o) { return new Ptt(o); }};
   window.RadioPttHands = {create: function(o) { return new Hands(o); }};

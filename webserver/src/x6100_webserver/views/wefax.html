@@ -80,7 +80,7 @@ app's buttons. Receive only: nothing here transmits.</p>
 </div>
 
 <script src="/static/js/radio_link.js?v=2"></script>
-<script src="/static/js/radio_session.js?v=8"></script>
+<script src="/static/js/radio_session.js?v=10"></script>
 <script>
 (function() {
   "use strict";
@@ -179,6 +179,10 @@ app's buttons. Receive only: nothing here transmits.</p>
     $("#stations button").each(function() { this.classList.toggle("here", Math.abs(parseFloat(this.dataset.k) - khz) < 0.3); });
   }
   let state = null;
+  /* Opened on the radio by itself when nothing else is (RadioSession.autoOpen) */
+  const autoOpen = RadioSession.autoOpen({cmd: "wefax", names: ["WeFax"], label: "WeFax", app: function() { return fax; },
+    radio: function() { return state; }, can: function() { return ses ? ses.can() : "not connected"; },
+    send: send, status: status});
 
   function tune(khz) {
     const dial = Math.round(khz * 1000) - CENTER;
@@ -238,8 +242,8 @@ app's buttons. Receive only: nothing here transmits.</p>
     const sp = t.indexOf(" "), head = sp < 0 ? t : t.slice(0, sp), body = sp < 0 ? "" : t.slice(sp + 1);
     try {
       if (ses.onText(head, body)) { RadioLink.health(document.getElementById("health"), ses.chips()); return; }
-      if (head === "wefax") { fax = JSON.parse(body); showFax(); }
-      else if (head === "state") { state = Object.assign(state || {}, JSON.parse(body)); markStation(); }
+      if (head === "wefax") { fax = JSON.parse(body); showFax(); autoOpen(); }
+      else if (head === "state") { state = Object.assign(state || {}, JSON.parse(body)); markStation(); autoOpen(); }
       else if (head === "m") document.getElementById("sig").textContent = parseFloat(body).toFixed(0) + " dBm";
       else if (head === "err") status(body, true);
     } catch (e) { status("Bad message: " + e, true); }

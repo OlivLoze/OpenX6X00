@@ -278,8 +278,8 @@ usual questions. Nothing goes out until Send, CQ or HB is pressed, or Auto answe
 at once. A click on the waterfall moves our TX offset there.</p>
 
 <script src="/static/js/radio_link.js?v=2"></script>
-<script src="/static/js/radio_session.js?v=8"></script>
-<script src="/static/js/app_wall.js?v=2"></script>
+<script src="/static/js/radio_session.js?v=10"></script>
+<script src="/static/js/app_wall.js?v=3"></script>
 <script>
 (function() {
   "use strict";
@@ -288,6 +288,10 @@ at once. A click on the waterfall moves our TX offset there.</p>
   const SPEEDS = ["Normal", "Fast", "Turbo", "Slow"], WIDTHS = [50, 80, 160, 25];   /* by speed: the 8 tones' width, Hz */
   const SUB_W = {0: 50, 1: 80, 2: 160, 4: 25}, SUB_L = {1: "F", 2: "T", 4: "S"};    /* by a decode's submode */
   let radio = null, js8 = null, js8At = 0, state = null;
+  /* Opened on the radio by itself when nothing else is (RadioSession.autoOpen) */
+  const autoOpen = RadioSession.autoOpen({cmd: "js8", names: ["JS8"], label: "JS8", app: function() { return js8; },
+    radio: function() { return state; }, can: function() { return radio ? radio.can() : "not connected"; },
+    send: function(s) { return !!radio && radio.send(s); }, status: function(t) { if (radio) radio.status(t); }});
   function status(text, error) { if (radio) radio.status(text, error); }
   function send(s) { return !!radio && radio.send(s); }
   function act(s) { return !!radio && radio.act(s); }
@@ -749,9 +753,9 @@ at once. A click on the waterfall moves our TX offset there.</p>
       lastSep = {band: "", talk: ""}; nBand = nTalk = 0;
     },
     onText: function(head, body) {
-      if (head === "js8") { js8 = JSON.parse(body); js8At = Date.now(); showJs8(); }
+      if (head === "js8") { js8 = JSON.parse(body); js8At = Date.now(); showJs8(); autoOpen(); }
       else if (head === "js8r") addMsg(JSON.parse(body));
-      else if (head === "state") { state = Object.assign(state || {}, JSON.parse(body)); if (js8) showJs8(); }
+      else if (head === "state") { state = Object.assign(state || {}, JSON.parse(body)); if (js8) showJs8(); autoOpen(); }
     },
     onBinary: function(buf) { wf.row(buf); },
   });

@@ -332,7 +332,7 @@ const AppWall = (function() {
     });
     ses = RadioSession.create({send: send, status: status, el: document.getElementById("ses"), onChange: health});
     link.connect();
-    return {send: send, act: act, status: status};
+    return {send: send, act: act, status: status, can: function() { return ses ? ses.can() : "not connected"; }};
   }
 
   return {pad: pad, hms: hms, loc2ll: loc2ll, band: band, ready: ready, country: country, flag: flag, km: km, distance: distance, waterfall: waterfall, map: map, tabs: tabs, fit: fit, connect: connect};
