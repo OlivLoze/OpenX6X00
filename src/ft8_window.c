@@ -289,6 +289,11 @@ static bool to_me_fresh(const ft8_station_t *st) {
     return st->to_me_at && lv_tick_elaps(st->to_me_at) < CALLS_YOU_MS;
 }
 
+/* Show: CQ also on the tiles and the lane: a station heard under Show: All in a QSO goes at once, not 2 minutes later */
+static bool st_shown(const ft8_station_t *st) {
+    return param_i_get(cfg_ft8_show_all) || st->cd.cell_type == CELL_RX_CQ || to_me_fresh(st);
+}
+
 static void stations_drop_old(void) {
     int kept = 0;
 
@@ -372,6 +377,7 @@ static void lane_draw_cb(lv_event_t *e) {
 
     /* TX first: the calls give way to it on its line */
     for (int k = -1; k < st_n; k++) {
+        if (k >= 0 && !st_shown(by_hz[k])) continue;
         const char *call = k < 0 ? "TX" : by_hz[k]->cd.meta.call_de;
         lv_coord_t  x    = box.x1 + lane_x(k < 0 ? params.ft8_tx_freq.x : by_hz[k]->cd.meta.freq_hz);
         lv_point_t  size;
@@ -500,8 +506,9 @@ static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
 static void board_update(void) {
     if (!board || !board_on) return;
     stations_drop_old();
-    board_n = st_n;
-    for (int i = 0; i < st_n; i++) board_st[i] = &st_all[i];
+    board_n = 0;
+    for (int i = 0; i < st_n; i++)
+        if (st_shown(&st_all[i])) board_st[board_n++] = &st_all[i];
     qsort(board_st, board_n, sizeof(board_st[0]), board_order);
 
     /* the tile selected follows its station when the order changes */
@@ -1224,6 +1231,8 @@ static const char *retries_label(void) {
 static void show_cb(button_data_t *btn) {
     if (kb_open) return;
     param_i_set(cfg_ft8_show_all, !param_i_get(cfg_ft8_show_all));
+    board_update();
+    lane_update();
 }
 
 static void foryou_cb(button_data_t *btn);
@@ -1775,16 +1784,28 @@ static void add_info(const char *fmt, ...) {
     row_post(&row);
 }
 
+/* The start of the slot we are in: the time of its rows. Taken when the tick comes, it read 1 to 3 s late on a busy
+ * band (07:42:18, 07:42:46 on 40 m, 20 to 26 decodes a slot): the slot's last decode runs before the tick */
+static struct tm *slot_start_utc(void) {
+    struct timespec now;
+    double          slot = ftx_slot_time(cur_proto());
+    double          t;
+    time_t          start;
+
+    clock_gettime(CLOCK_REALTIME, &now);
+    t     = (double)now.tv_sec + now.tv_nsec / 1e9;
+    start = (time_t)(floor(t / slot) * slot);
+    return gmtime(&start);
+}
+
 /* Our transmission as a row, "12:00:15 DL1ABC ON6URE JO21" */
 static void add_tx_row(const char *msg) {
     cell_data_t     row = {.cell_type = CELL_TX_MSG};
     char            text[sizeof(row.text)];
-    struct timespec now;
 
     snprintf(text, sizeof(text), "%s", msg);
     if (!strncmp(text, "CQ_", 3)) text[2] = ' ';
-    clock_gettime(CLOCK_REALTIME, &now);
-    strftime(row.text, 10, "%H:%M:%S ", gmtime(&now.tv_sec));
+    strftime(row.text, 10, "%H:%M:%S ", slot_start_utc());
     snprintf(row.text + 9, sizeof(row.text) - 9, "%s", text);
     row_post(&row);
 }
@@ -2078,12 +2099,10 @@ static void on_tick(const slot_info_t *slot, bool new_slot, float sec, void *ctx
     }
 
     static unsigned ft2_slots;
-    struct timespec now;
 
     sending = false;
-    clock_gettime(CLOCK_REALTIME, &now);
 
-    struct tm *utc = gmtime(&now.tv_sec);
+    struct tm *utc = slot_start_utc();
 
     snprintf(slot_time, sizeof(slot_time), "%02i:%02i:%02i", utc->tm_hour, utc->tm_min, utc->tm_sec);
 
