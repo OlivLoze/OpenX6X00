@@ -385,6 +385,9 @@ static void      board_move(int step);
 static void      board_press(void);
 static void      unread_seen(const char *call);
 static void      unread_add(const char *call);
+static void      red_mark(const char *call);
+static void      red_seen(const char *call);
+static bool      red_on(const char *call);
 static void      board_show(bool on);
 static void      table_takes_keys(void);
 static void      keys_leave_main(void);
@@ -892,7 +895,11 @@ static void add_message(const js8_rx_msg_t *in)
     if (!m.tx) growing = find_partial(m.msg_id);
     if (!m.partial) process_message(&m);
     if (!m.partial && !m.tx && m.to_me && m.from[0] &&
-        !(conv_root && !strcasecmp(m.from, conv_call_now()))) unread_add(m.from); /* the card says "1 new" */
+        !(conv_root && !strcasecmp(m.from, conv_call_now()))) {
+        unread_add(m.from); /* the card says "1 new" */
+        /* a message, not a heartbeat answered; on the card selected it is seen already */
+        if (!m.snr_report && !m.heartbeat && !(board_on && !strcasecmp(m.from, board_sel_call))) red_mark(m.from);
+    }
     if (growing >= 0) {
         update_slot(growing, &m);
         conv_refresh(&m);
@@ -2540,7 +2547,7 @@ static void lane_update(void)
         lane_call_t *c = &lane_calls[lane_n++];
         snprintf(c->call, sizeof(c->call), "%s", st[k].call);
         c->hz = st[k].freq_hz;
-        c->me = st[k].heard_me && now - st[k].heard_me_ms < LANE_SHOW_MS;
+        c->me = red_on(st[k].call);
     }
     qsort(lane_calls, lane_n, sizeof(lane_calls[0]), lane_by_hz);
     if (lane) lv_obj_invalidate(lane);
@@ -2684,7 +2691,7 @@ static void build_tx_bar(void) {
 #define BOARD_ROWS  3
 #define BOARD_N     (BOARD_COLS * BOARD_ROWS)
 #define BARS        5
-#define HEARD_FRESH_MS (3 * 60 * 1000)  /* a card red this long after their last answer, then a plain card */
+#define RED_MS      (60 * 1000)       /* a card red this long after a message for us (F4OLI), or until selected */
 
 typedef struct {
     lv_obj_t *box, *flag, *call, *info, *tag, *bar[BARS];
@@ -2708,6 +2715,41 @@ static int unread_of(const char *call)
     for (int i = 0; i < UNREAD_N; i++)
         if (unread[i].call[0] && !strcasecmp(unread[i].call, call)) return unread[i].n;
     return 0;
+}
+
+/* Red cards: a message for us (not a heartbeat's answer, F4OLI) lights its station's card for RED_MS, or until the
+ * MFK selects it: seen */
+#define RED_N 32
+static struct {
+    char    call[JS8_RX_CALL_LEN];
+    int64_t at;
+} reds[RED_N];
+
+static void red_mark(const char *call)
+{
+    int k = 0;
+    for (int i = 0; i < RED_N; i++) {
+        if (!strcasecmp(reds[i].call, call)) {
+            k = i;
+            break;
+        }
+        if (reds[i].at < reds[k].at) k = i; /* full: the oldest goes */
+    }
+    snprintf(reds[k].call, sizeof(reds[k].call), "%s", call);
+    reds[k].at = now_wall_ms();
+}
+
+static void red_seen(const char *call)
+{
+    for (int i = 0; i < RED_N; i++)
+        if (reds[i].call[0] && !strcasecmp(reds[i].call, call)) reds[i].call[0] = '\0';
+}
+
+static bool red_on(const char *call)
+{
+    for (int i = 0; i < RED_N; i++)
+        if (reds[i].call[0] && !strcasecmp(reds[i].call, call)) return now_wall_ms() - reds[i].at < RED_MS;
+    return false;
 }
 
 static void unread_add(const char *call)
@@ -2782,7 +2824,7 @@ static void card_show(card_t *c, const js8_station_t *st, bool sel)
     const where_t *w   = station_where(st->call);
     int            n   = unread_of(st->call);
     bool           you   = st->heard_me;
-    bool           fresh = you && now_wall_ms() - st->heard_me_ms < HEARD_FRESH_MS;
+    bool           fresh = red_on(st->call);
 
     lv_obj_clear_flag(c->box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(c->box, fresh ? TC(row_to_me) : TC(row), LV_PART_MAIN);
@@ -2863,6 +2905,7 @@ static void board_move(int step)
     int k = board_sel >= 0 ? (board_sel + step + board_n) % board_n : 0;
     snprintf(board_sel_call, sizeof(board_sel_call), "%s", board_st[k].call);
     memcpy(sel_call, board_st[k].call, sizeof(sel_call));
+    red_seen(board_st[k].call);  /* selected: seen, the red goes */
     selection_move(board_st[k].freq_hz, board_st[k].snr);
     board_update();
 }

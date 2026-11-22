@@ -3108,7 +3108,7 @@ Buttons:
 
 The lane. Over the waterfall, each call heard in the last 2 minutes is written over
 its offset, on two lines where they would meet: red for a station that called you in
-the last 3 minutes, white for a CQ, grey for the others, yellow for the tile selected
+the last minute (until you select its tile), white for a CQ, grey for the others, yellow for the tile selected
 and for TX, your offset.
 
 The list (View: Traffic). A line with the slot's time heads its rows; your
@@ -3133,8 +3133,8 @@ distance in the same unit.
 The CQs stand out of the traffic, to answer them fast (F4OLI).
 
 The tiles (View: Tiles). One tile a station heard in the last 2 minutes: flag, call,
-signal, country and distance, and a tag: "calls you" with its report (the tile red for
-3 minutes after its call), NEW (a CQ from a country not in your log), CQ (or CQ POTA),
+signal, country and distance, and a tag: "calls you" with its report (the tile red for a
+minute after its call, or until the MFK selects it: seen; the station stays first 3 minutes), NEW (a CQ from a country not in your log), CQ (or CQ POTA),
 worked, QSO (it is in a QSO with someone else). The stations that called you come first,
 then the NEW CQs, the CQs, the CQs worked, the others; the strongest first in each. Nine
 a page, the page under them (1/2). The MFK goes from tile to tile (its station's offset
@@ -3338,8 +3338,9 @@ First steps:
    reduction, noise blanker and notch are off, and power is capped at 7 W;
    all go back when you leave.
 4. The board shows the stations of the band as cards. Heartbeat (page 1)
-   tells them you are here; those that hear you answer and come first, in
-   red for 3 minutes, "heard you" with their report. Turn the MFK onto a card and press:
+   tells them you are here; those that hear you answer and come first,
+   "heard you" with their report; red only for a message to you (not a heartbeat's answer), for a minute or
+   until the MFK selects the card. Turn the MFK onto a card and press:
    the conversations open on that station.
 5. ESC or the top knob stops sending; the next ESC leaves the app.
 
@@ -3359,8 +3360,8 @@ those that heard you first (a heartbeat answered, a call), then the others,
 newest first. A card shows the flag, the call, the signal as you hear it,
 the country and distance (from their locator, else from their country's
 middle, "~"), and a tag: "2 new" (messages for you not read), "heard you
--12" (their report; the card red for 3 minutes after their answer, then
-plain with the tag in grey), else what they sent last (CQ, HB, X6100). The selected
+-12" (their report). The card is red for a minute after a message to you (a heartbeat's
+answer alone does not light it), or until the MFK selects it, then plain with the tag in grey, else what they sent last (CQ, HB, X6100). The selected
 card is framed; the MFK goes from card to card, its press opens the
 conversations. On the right of the TX line: the stations heard and "HB:
 say you're here", then after a heartbeat its time and how many heard it,

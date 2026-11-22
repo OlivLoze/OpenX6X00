@@ -269,7 +269,8 @@ static void dxcc_add_call(const char *call, void *ud) {
 
 #define ST_MAX          64
 #define ST_KEEP_MS      (2 * 60 * 1000)     /* a station goes 2 minutes after its last decode... */
-#define CALLS_YOU_MS    (3 * 60 * 1000)     /* ...one that called us stays red this long after its call */
+#define CALLS_YOU_MS    (60 * 1000)         /* ...one that called us is red this long after its call, or until the MFK
+                                               selects its tile: seen (F4OLI) */
 
 typedef struct {
     cell_data_t cd;         /* its last row: a press calls it as a press on that row */
@@ -277,8 +278,11 @@ typedef struct {
     uint32_t    to_me_at;   /* lv_tick of its last call to us, 0 none */
     int         report;     /* the report it gave us, in that call */
     bool        has_report;
+    bool        seen;       /* its tile selected since that call: no more red */
 } ft8_station_t;
 
+static bool      board_on;              /* the tiles show (View), else the traffic: the list */
+static char      board_sel_call[16];
 static ft8_station_t st_all[ST_MAX];
 static int           st_n;
 
@@ -286,7 +290,7 @@ static void lane_update(void);
 static void board_update(void);
 
 static bool to_me_fresh(const ft8_station_t *st) {
-    return st->to_me_at && lv_tick_elaps(st->to_me_at) < CALLS_YOU_MS;
+    return st->to_me_at && !st->seen && lv_tick_elaps(st->to_me_at) < CALLS_YOU_MS;
 }
 
 /* Show: CQ also on the tiles and the lane: a station heard under Show: All in a QSO goes at once, not 2 minutes later */
@@ -294,11 +298,18 @@ static bool st_shown(const ft8_station_t *st) {
     return param_i_get(cfg_ft8_show_all) || st->cd.cell_type == CELL_RX_CQ || to_me_fresh(st);
 }
 
+/* A station that called us stays first this long, red or seen: a tile does not jump pages as its red goes */
+#define CALLED_FIRST_MS (3 * 60 * 1000)
+
+static bool called_lately(const ft8_station_t *st) {
+    return st->to_me_at && lv_tick_elaps(st->to_me_at) < CALLED_FIRST_MS;
+}
+
 static void stations_drop_old(void) {
     int kept = 0;
 
     for (int i = 0; i < st_n; i++)
-        if (lv_tick_elaps(st_all[i].heard) < ST_KEEP_MS || to_me_fresh(&st_all[i])) st_all[kept++] = st_all[i];
+        if (lv_tick_elaps(st_all[i].heard) < ST_KEEP_MS || called_lately(&st_all[i])) st_all[kept++] = st_all[i];
     st_n = kept;
 }
 
@@ -327,6 +338,7 @@ static void stations_add(const cell_data_t *cd) {
     if (cd->cell_type != CELL_RX_CQ && cq) st->cd.worked_type = worked;    /* what its CQ told of the log */
     if (cd->cell_type == CELL_RX_TO_ME) {
         st->to_me_at   = st->heard ? st->heard : 1;
+        st->seen       = board_on && !strcmp(board_sel_call, cd->meta.call_de);     /* its tile selected: seen already */
         st->has_report = cd->meta.type == FTX_MSG_TYPE_REPORT || cd->meta.type == FTX_MSG_TYPE_R_REPORT;
         st->report     = cd->meta.remote_snr;
     }
@@ -345,8 +357,6 @@ static void stations_clear(void) {
 
 static lv_obj_t *lane;
 static lv_obj_t *board;                 /* the tiles, over the hidden list */
-static bool      board_on;              /* the tiles show (View), else the traffic: the list */
-static char      board_sel_call[16];
 
 static lv_coord_t lane_x(float hz) {
     if (filter_high <= filter_low) return 0;
@@ -431,7 +441,7 @@ static ft8_station_t *board_st[ST_MAX];
 static int            board_n, board_sel, board_first;
 
 static int st_rank(const ft8_station_t *st) {
-    if (to_me_fresh(st)) return 0;
+    if (called_lately(st)) return 0;
     if (st->cd.cell_type == CELL_RX_CQ && st->cd.new_dxcc) return 1;
     if (st->cd.cell_type == CELL_RX_CQ && st->cd.worked_type == SEARCH_WORKED_NO) return 2;
     if (st->cd.cell_type == CELL_RX_CQ) return 3;
@@ -541,6 +551,7 @@ static void board_move(int step) {
     if (!board_n) return;
     int k = board_sel >= 0 ? (board_sel + step + board_n) % board_n : 0;
     snprintf(board_sel_call, sizeof(board_sel_call), "%s", board_st[k]->cd.meta.call_de);
+    board_st[k]->seen = true;   /* selected: the red goes */
     lv_finder_set_cursor(finder, board_st[k]->cd.meta.freq_hz);
     board_update();
     lane_update();
@@ -573,6 +584,7 @@ static void card_clicked_cb(lv_event_t *e) {
 
     if (k >= board_n) return;
     snprintf(board_sel_call, sizeof(board_sel_call), "%s", board_st[k]->cd.meta.call_de);
+    board_st[k]->seen = true;
     board_update();
     board_call(k);
 }
