@@ -51,6 +51,8 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 static char     last_by[24];
 static char     station_by[24];     /* a time station set the clock since the start: FT8 leaves it alone */
+static time_t   station_when;
+static double   station_step;
 static time_t   last_when;
 static double   last_step;
 static unsigned generation;
@@ -196,6 +198,21 @@ void clock_sync_start_check(void) {
     lv_timer_set_repeat_count(lv_timer_create(start_check_cb, START_CHECK_MS, NULL), 1);
 }
 
+bool clock_sync_ntp(void) {
+    return ntpd_synced() || ftx_clock_synced(NULL);
+}
+
+bool clock_sync_station(char *by, size_t size, time_t *when, double *step) {
+    pthread_mutex_lock(&lock);
+    bool any = station_by[0] != '\0';
+
+    snprintf(by, size, "%s", station_by);
+    *when = station_when;
+    *step = station_step;
+    pthread_mutex_unlock(&lock);
+    return any;
+}
+
 bool clock_sync_ft8_held(const char **why) {
     static char by[24];
 
@@ -228,8 +245,11 @@ bool clock_sync_step(double step, const char *by) {
 
     pthread_mutex_lock(&lock);
     snprintf(last_by, sizeof(last_by), "%s", by);
-    if (strcmp(by, "FT8"))     /* a time station: it holds against FT8 until the radio stops */
+    if (strcmp(by, "FT8")) {   /* a time station: it holds against FT8 until the radio stops */
         snprintf(station_by, sizeof(station_by), "%s", by);
+        station_when = to.tv_sec;
+        station_step = step;
+    }
     last_when = to.tv_sec;
     last_step = step;
     generation++;

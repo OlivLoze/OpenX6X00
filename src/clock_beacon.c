@@ -23,20 +23,32 @@
 #include <string.h>
 
 #define FS          ((double)AUDIO_CAPTURE_RATE / AUDIO_DECIM)
-#define TONE_HZ     1000.0
 #define BOX         110         /* 10 ms */
 #define ENV_N       4096        /* ms of the amplitude kept */
 #define FLOOR_N     3000
 #define FLOOR_EVERY 250
 #define BASE_BLOCK  10.0        /* s */
 
+#define RWM_MIN  0x0FFFFF003FFFFC00ULL   /* :10-:29, :40-:59 */
+#define BPM_MIN  0x007FE0FFC1FF83FFULL   /* UTC :00-:09, :15-:24, :30-:39, :45-:54 */
+#define WWV_MIN  0x0FFFFFFFFFFFFFFEULL   /* all but :00, the hour's 1500 Hz tone */
+
+/* Heard best from France first: RWM, then BPM, WWV, WWVH. CHU closed on 22 June 2026 */
 const clock_beacon_t clock_beacons[] = {
-    {"RWM 4996", 4996000, 4995000, 500},
-    {"RWM 9996", 9996000, 9995000, 500},
-    {"RWM 14996", 14996000, 14995000, 500},
-    {"WWV 5000", 5000000, 5000000, 800},
-    {"WWV 10000", 10000000, 10000000, 800},
-    {"WWV 15000", 15000000, 15000000, 800},
+    {"RWM 4996", 4996000, 4995000, 1000, 500, 0, RWM_MIN},
+    {"RWM 9996", 9996000, 9995000, 1000, 500, 0, RWM_MIN},
+    {"RWM 14996", 14996000, 14995000, 1000, 500, 0, RWM_MIN},
+    {"BPM 5000", 5000000, 5000000, 1000, 300, 20, BPM_MIN},
+    {"BPM 10000", 10000000, 10000000, 1000, 300, 20, BPM_MIN},
+    {"BPM 15000", 15000000, 15000000, 1000, 300, 20, BPM_MIN},
+    {"WWV 2500", 2500000, 2500000, 1000, 800, 0, WWV_MIN},
+    {"WWV 5000", 5000000, 5000000, 1000, 800, 0, WWV_MIN},
+    {"WWV 10000", 10000000, 10000000, 1000, 800, 0, WWV_MIN},
+    {"WWV 15000", 15000000, 15000000, 1000, 800, 0, WWV_MIN},
+    {"WWV 20000", 20000000, 20000000, 1000, 800, 0, WWV_MIN},
+    {"WWVH 5000", 5000000, 5000000, 1200, 800, 0, WWV_MIN},
+    {"WWVH 10000", 10000000, 10000000, 1200, 800, 0, WWV_MIN},
+    {"WWVH 15000", 15000000, 15000000, 1200, 800, 0, WWV_MIN},
 };
 const int clock_beacons_n = sizeof(clock_beacons) / sizeof(clock_beacons[0]);
 
@@ -65,13 +77,17 @@ static bool     on;
 static uint64_t on_k;
 
 static double   prev_t = NAN, prev_raw;
+static float    peak;                   /* the tone's peak over the last 200 values (0.2 s) */
+static int      peak_n;
 
 static void reset(void) {
     idx       = 0;
     base_cur  = base_prev = INFINITY;
     block_t0  = NAN;
     osc       = 1.0;
-    rot       = cexp(I * 2.0 * M_PI * TONE_HZ / FS);
+    rot       = cexp(I * 2.0 * M_PI * clock_beacons[pub.beacon].tone_hz / FS);
+    peak      = 0;
+    peak_n    = 0;
     memset(box, 0, sizeof(box));
     box_sum   = 0;
     box_pos   = 0;
@@ -118,14 +134,22 @@ static void run_over(uint64_t k) {
             break;
         }
 
-    double t   = env_t[edge % ENV_N];
+    const clock_beacon_t *b = &clock_beacons[pub.beacon];
+    double t   = env_t[edge % ENV_N] + b->advance_ms / 1000.0;     /* when it stands for */
     double raw = round(t / 60.0) * 60.0 - t;
     float  snr = 20.0f * log10f(level / fmaxf(noise, 1e-9f));
+    int    min = (int)((long long)llround(t / 60.0) % 60);
+
+    if (!(b->minutes >> min & 1))       /* a minute the station marks no UTC in (BPM's UT1, RWM's quiet ones) */
+        return;
 
     pthread_mutex_lock(&lock);
     pub.snr_db    = snr;
     pub.markers++;
     pub.marker_at = (time_t)llround(t);
+
+    bool agree = false;
+
     if (isfinite(prev_t)) {
         double gap = t - prev_t;
         double m   = round(gap / 60.0);
@@ -135,8 +159,14 @@ static void run_over(uint64_t k) {
             pub.ahead  = -pub.raw - clock_sync_beacon_delay(NULL);
             pub.result = true;
             pub.result_id++;
+            agree = true;
         }
     }
+    if (pub.hist_n == CLOCK_BEACON_HIST) {
+        memmove(&pub.hist[0], &pub.hist[1], (CLOCK_BEACON_HIST - 1) * sizeof(pub.hist[0]));
+        pub.hist_n--;
+    }
+    pub.hist[pub.hist_n++] = (clock_beacon_marker_t){(time_t)llround(t / 60.0) * 60, (float)raw, snr, agree};
     pthread_mutex_unlock(&lock);
     prev_t   = t;
     prev_raw = raw;
@@ -157,6 +187,15 @@ static void put_env(float a, double t) {
     }
     if (noise <= 0)
         return;
+    if (a > peak)
+        peak = a;
+    if (++peak_n >= 200) {          /* the tone's level for the screen, five times a second */
+        pthread_mutex_lock(&lock);
+        pub.tone_db = peak > noise ? 20.0f * log10f(peak / noise) : 0;
+        pthread_mutex_unlock(&lock);
+        peak   = 0;
+        peak_n = 0;
+    }
     if (!on && a > 3.0f * noise) {
         on   = true;
         on_k = env_k - 1;
@@ -217,6 +256,17 @@ void clock_beacon_audio(unsigned int n, float *samples) {
 }
 
 /* ---- any thread ---- */
+
+bool clock_beacon_minute_ok(int i, int minute) {
+    return i >= 0 && i < clock_beacons_n && minute >= 0 && minute < 60 && (clock_beacons[i].minutes >> minute & 1);
+}
+
+int clock_beacon_next_s(int i, time_t now) {
+    for (int s = 1; s <= 3600; s++)
+        if ((now + s) % 60 == 0 && clock_beacon_minute_ok(i, (int)((now + s) / 60 % 60)))
+            return s;
+    return -1;
+}
 
 void clock_beacon_start(int i) {
     pthread_mutex_lock(&lock);

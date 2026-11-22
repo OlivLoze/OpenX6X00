@@ -24,6 +24,12 @@ bool clock_sync_kept(const char **why);
  * "NTP", "GPS" or the station ("RWM 9996") */
 bool clock_sync_ft8_held(const char **why);
 
+/* NTP alone keeps the clock (ntpd synchronised, the internet's servers or the GPS through it) */
+bool clock_sync_ntp(void);
+
+/* A time station set the clock since the start: which, when, by how much */
+bool clock_sync_station(char *by, size_t size, time_t *when, double *step);
+
 /* Two minutes after the start, with neither NTP nor the GPS: if nothing set the clock since, say so (F4OLI: each start
  * the clock is set again). LVGL thread */
 void clock_sync_start_check(void);

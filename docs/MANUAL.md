@@ -4904,15 +4904,22 @@ set it in the field when neither WiFi (NTP) nor a GPS is there. The clock
 chip keeps the time while the radio is off, but it drifts a few seconds a
 week and FT8 and JS8 need it within about a second.
 
-The rows:
+Two views, View changes between them (Listen goes to Station):
 
-- Clock: the time in UTC and what keeps it or set it last: "kept by NTP",
-  "kept by GPS", "FT8 -0.42 s 3 min ago", "RWM 9996 +0.031 s 1 h ago", or
-  "clock chip" (nothing set it since the start).
-- FT8 says: how far the clock is off, by the FT8 and FT4 stations heard,
-  and from how many decodes: "ahead 0.32 s, 18 decodes, 2 min ago". FT8 must
-  have been open: the measure is taken there and kept 15 minutes.
-- Time station: what the time station gives (below).
+- Clock: the time in UTC, large, and the date; under it, in a framed box, what
+  keeps the clock now ("NTP (WiFi)", "GPS", "RWM 9996 set +0.031 s at 11:12,
+  holds till power-off", "FT8", or "Clock chip: not set since the start"); the
+  GPS (fix, satellites, grid) and what FT8 says of the clock ("ahead 0.32 s, 18
+  decodes", "learning in FT8: 7 slots"). On the right, the sources in their
+  order (below), the one that keeps the clock green with KEEPS IT, the others
+  "waits" (they measure, they may not set it) or "-" (absent).
+- Station: the station listened to, a chip LISTENING or WAITS FOR :10 (a minute
+  it sends no marker in), and what keeps the clock. The minute on a dial: the
+  marker at the top, the second hand, 15 and 45, and the next marker's
+  countdown. The marker tone's level (dB over the noise, five times a second),
+  the last four markers heard (their time, how far the clock is off, their
+  level, "agree" when one is within 30 ms of the one before: a result), and the
+  hour as a bar, the minutes with a marker green, now marked.
 
 Which source sets the clock, first to last: NTP (WiFi), the GPS (ntpd takes the
 internet's servers before it), a time station, FT8; the clock chip is only where the
@@ -4926,7 +4933,8 @@ The buttons:
 
 | Button | Does |
 |---|---|
-| Station | RWM 4996, 9996, 14996 kHz, WWV 5000, 10000, 15000 kHz |
+| View: Clock / Station | the clock and its sources, or the time station |
+| Station | RWM 4996, 9996, 14996 kHz; BPM 5000, 10000, 15000 kHz; WWV 2500, 5000, 10000, 15000, 20000 kHz; WWVH 5000, 10000, 15000 kHz |
 | Listen / Stop listening | tunes the station and listens for its minute marker |
 | Set from FT8 | sets the clock from the FT8 measure (15 minutes old at most) |
 | FT8 Auto: On / Off | FT8 sets the clock itself in the field (On by default) |
@@ -4963,8 +4971,15 @@ the minute starts to a few milliseconds:
   plain carrier, a silence and its callsign: Time station then shows "no
   markers until :10" (or :40). Heard well in Europe: 9996 kHz by day, 4996
   kHz at night.
-- WWV (Colorado, 5, 10 and 15 MHz): a 1000 Hz tone 800 ms on each minute.
-  From Europe at times, on 10 or 15 MHz.
+- BPM (China, 5, 10 and 15 MHz): a 1000 Hz tone 300 ms on each minute, sent
+  20 ms early (the radio takes it off). UTC from :00 to :09, :15 to :24, :30 to
+  :39 and :45 to :54; UT1 (up to 0.9 s off UTC) from :25 to :29 and :55 to :59,
+  and its carrier alone at :10-:14 and :40-:44: those minutes' markers are left
+  out. From Europe at times on 10 and 15 MHz.
+- WWV (Colorado, 2.5, 5, 10, 15 and 20 MHz): a 1000 Hz tone 800 ms on each
+  minute but the hour's (1500 Hz). From Europe at times, on 10 or 15 MHz.
+- WWVH (Hawaii, 5, 10 and 15 MHz): the same with a 1200 Hz tone, so the two
+  on one frequency are told apart.
 
 Listen tunes the station in USB (the marker as a 1000 Hz tone; the frequency
 and mode come back when the window closes). Time station shows "listening",
