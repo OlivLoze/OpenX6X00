@@ -3113,6 +3113,9 @@ and for TX, your offset.
 
 The list (View: Traffic). A line with the slot's time heads its rows; your
 transmissions are in it in blue, in their place. Each row has the message, and on the right the
+station's time offset (WSJT-X's DT, "+0.2 s": where it started in the slot minus 0.5 s; the
+radio's audio path adds about the same to every station, so look at how they differ, or at all
+of them moving together: then it is your clock), the
 country with its flag, the distance (when the sender sent a grid and your
 QTH is set) and the SNR. The country comes from AD1C's cty.dat (SP2KMO's
 upstream PR #282). Settings > Display > INTERFACE > FT8/FT4 info picks what
@@ -3133,7 +3136,7 @@ distance in the same unit.
 The CQs stand out of the traffic, to answer them fast (F4OLI).
 
 The tiles (View: Tiles). One tile a station heard in the last 2 minutes: flag, call,
-signal, country and distance, and a tag: "calls you" with its report (the tile red for a
+signal, its DT, country and distance, and a tag: "calls you" with its report (the tile red for a
 minute after its call, or until the MFK selects it: seen; the station stays first 3 minutes), NEW (a CQ from a country not in your log), CQ (or CQ POTA),
 worked, QSO (it is in a QSO with someone else). The stations that called you come first,
 then the NEW CQs, the CQs, the CQs worked, the others; the strongest first in each. Nine

@@ -47,6 +47,7 @@ typedef struct {
     int16_t                 flag;           /* its flag in flags.h, -1 none */
     bool                    pota;           /* spotted on POTA now, or a CQ POTA */
     bool                    new_dxcc;       /* a country not in the log yet (the window sets it) */
+    float                   dt;             /* where it started in the slot minus 0.5 s, WSJT-X's DT; NAN unknown */
 } cell_data_t;
 
 /* What the window does on keys the list gets */

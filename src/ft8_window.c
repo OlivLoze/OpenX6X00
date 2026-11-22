@@ -432,7 +432,7 @@ static void build_lane(void) {
 #define BARS        5
 
 typedef struct {
-    lv_obj_t *box, *flag, *call, *info, *tag, *bar[BARS];
+    lv_obj_t *box, *flag, *call, *hz, *info, *tag, *bar[BARS];
 } card_t;
 
 static card_t         cards[BOARD_N];
@@ -473,6 +473,8 @@ static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
         lv_obj_add_flag(c->flag, LV_OBJ_FLAG_HIDDEN);
     }
     lv_label_set_text(c->call, cd->meta.call_de);
+    if (isfinite(cd->dt)) lv_label_set_text_fmt(c->hz, "%+.1f s", cd->dt);     /* its DT */
+    else lv_label_set_text(c->hz, "");
 
     char info[48] = "";
     if (cd->country[0]) snprintf(info, sizeof(info), "%s", cd->country);
@@ -483,6 +485,7 @@ static void card_show(card_t *c, const ft8_station_t *st, bool sel) {
     }
     lv_label_set_text(c->info, info);
     lv_obj_set_style_text_color(c->info, fresh ? TC(text) : TC(text_mute), LV_PART_MAIN);   /* grey on red: unreadable */
+    lv_obj_set_style_text_color(c->hz, fresh ? TC(text) : TC(text_mute), LV_PART_MAIN);
 
     /* their signal as we hear it, -24 dB one bar to -4 dB five */
     int lit = (cd->meta.local_snr + 29) / 5;
@@ -638,6 +641,11 @@ static void build_board(lv_coord_t y, lv_coord_t h) {
         lv_obj_set_style_text_font(c->call, &sony_22, LV_PART_MAIN);
         lv_obj_set_style_text_color(c->call, TC(text), LV_PART_MAIN);
         lv_obj_set_pos(c->call, 40, 2);
+
+        c->hz = lv_label_create(box);    /* its time offset (DT), left of the bars */
+        lv_obj_set_style_text_font(c->hz, &sony_16, LV_PART_MAIN);
+        lv_obj_set_style_text_color(c->hz, TC(text_mute), LV_PART_MAIN);
+        lv_obj_align(c->hz, LV_ALIGN_TOP_RIGHT, -54, 8);
 
         for (int k = 0; k < BARS; k++) {
             lv_obj_t *bar = c->bar[k] = lv_obj_create(box);
@@ -1917,6 +1925,10 @@ static void add_rx_text(int16_t snr, const char *text, bool odd, float freq_hz, 
     }
 
     cell_data_t row = {.odd = odd, .meta = meta};
+    float       ws  = audio_worker_window_start(audio_worker);
+
+    /* WSJT-X's DT: where it started in the slot, minus the 0.5 s FT8 and FT4 key at; FT2 starts when it can */
+    row.dt = isfinite(ws) && !is_ft2() ? time_sec + ws - 0.5f : NAN;
 
     if (meta.to_me)
         row.cell_type = CELL_RX_TO_ME;

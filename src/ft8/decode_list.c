@@ -8,6 +8,7 @@
 #include "decode_list.h"
 #include "../remote_server.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -558,6 +559,23 @@ static void draw_extras_cb(lv_event_t *e) {
     area.x1 = area.x2 - 120;
     snprintf(buf, sizeof(buf), "%i dB", cd->meta.local_snr);
     lv_draw_label(dsc->draw_ctx, dsc->label_dsc, &area, buf, NULL);
+
+    if (isfinite(cd->dt)) {     /* its time offset, WSJT-X's DT, small and grey before the SNR (F4OLI) */
+        lv_draw_label_dsc_t ld = *dsc->label_dsc;
+        lv_area_t           o  = area;
+        char                hz[16];     /* "+0.2 s" */
+
+        ld.font  = &sony_16;
+        ld.color = cd->cell_type == CELL_RX_TO_ME ? TC(text) : TC(text_mute);     /* grey on red: unreadable */
+        ld.decor = LV_TEXT_DECOR_NONE;
+        snprintf(hz, sizeof(hz), "%+.1f s", cd->dt);
+        o.x2 = area.x2 - text_width(buf, dsc->label_dsc) - 14;
+        o.x1 = o.x2 - text_width(hz, &ld);
+        o.y1 = (dsc->draw_area->y1 + dsc->draw_area->y2 - lv_font_get_line_height(&sony_16)) / 2;
+        o.y2 = o.y1 + lv_font_get_line_height(&sony_16);
+        lv_draw_label(dsc->draw_ctx, &ld, &o, hz, NULL);
+        area.x1 = o.x1;
+    }
 
     lv_coord_t right    = area.x1 - 10;
     lv_coord_t text_end = dsc->draw_area->x1 + lv_obj_get_style_pad_left(obj, LV_PART_ITEMS) +
