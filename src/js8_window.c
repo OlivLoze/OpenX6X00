@@ -2445,6 +2445,10 @@ static void esc_pressed(void)
 static void key_cb(lv_event_t *ev)
 {
     uint32_t key = *(uint32_t *)lv_event_get_param(ev);
+    /* The list's own Down (select_row: following the new rows) is no key of the operator's: on the board it moved
+     * the card selected one on with each message (and the conversation open with it, which follows the selection),
+     * and it counted as someone at the radio, so AUTO never went idle (F4OLI's chat audit, 22/11) */
+    if (auto_selecting) return;
     user_touch(); /* someone is at the radio */
     bool vol_down = key == KEY_VOL_LEFT_EDIT || key == KEY_VOL_LEFT_SELECT;
     bool vol_up   = key == KEY_VOL_RIGHT_EDIT || key == KEY_VOL_RIGHT_SELECT;
