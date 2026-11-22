@@ -895,10 +895,11 @@ static void add_message(const js8_rx_msg_t *in)
     if (!m.tx) growing = find_partial(m.msg_id);
     if (!m.partial) process_message(&m);
     if (!m.partial && !m.tx && m.to_me && m.from[0] &&
-        !(conv_root && !strcasecmp(m.from, conv_call_now()))) {
+        !(conv_root && !strcasecmp(m.from, conv_call_now())) && !m.snr_report && !m.heartbeat) {
+        /* a message, not a heartbeat answered: that one is "heard you -13", not "1 new" (F4OLI's debug, 22/11) */
         unread_add(m.from); /* the card says "1 new" */
-        /* a message, not a heartbeat answered; on the card selected it is seen already */
-        if (!m.snr_report && !m.heartbeat && !(board_on && !strcasecmp(m.from, board_sel_call))) red_mark(m.from);
+        /* on the card selected it is seen already */
+        if (!(board_on && !strcasecmp(m.from, board_sel_call))) red_mark(m.from);
     }
     if (growing >= 0) {
         update_slot(growing, &m);
@@ -1087,8 +1088,8 @@ static void station_fields(const js8_station_t *stn, int64_t now, station_fields
     if (stn->heard_me) {
         char ago[8];
         format_age(now - stn->heard_me_ms, ago, sizeof(ago));
-        if (!stn->has_reported_snr) snprintf(out->heard, sizeof(out->heard), "heard you (%s)", ago);
-        else snprintf(out->heard, sizeof(out->heard), "heard you %+03d (%s)", stn->reported_snr, ago);
+        if (!stn->has_reported_snr) snprintf(out->heard, sizeof(out->heard), "heard you %s", ago);
+        else snprintf(out->heard, sizeof(out->heard), "heard you %+03d %s", stn->reported_snr, ago);
     }
 
     const where_t *w = station_where(stn->call);
@@ -1245,10 +1246,11 @@ static void draw_station_columns(lv_obj_draw_part_dsc_t *d, lv_obj_t *tbl, int16
             continue;
         }
         lv_draw_label_dsc_t style = (c == 2 && st_worked[slot]) ? logged : *d->label_dsc;
-        if (c >= 7) style.font = &sony_20;  /* country, grid, km: the narrower font fits them */
-        if (c >= 7) cell.y1 += 2;
+        /* heard, country, grid, km: the narrower font fits them ("heard you -08 13m" wrapped onto the row under) */
+        if (c >= 6) style.font = &sony_20;
+        if (c >= 6) cell.y1 += 2;
         lv_draw_label(d->draw_ctx, &style, &cell, text[c], NULL);
-        if (c >= 7) cell.y1 -= 2;
+        if (c >= 6) cell.y1 -= 2;
     }
 
     /* Heard sending to @X6100, while we are in it: a small tag at the end of
