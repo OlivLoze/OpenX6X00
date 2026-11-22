@@ -54,6 +54,7 @@
 #include "cfg_socket.h"
 #include "cpu_power.h"
 #include "clock.h"
+#include "clock_sync.h"
 #include "btaudio.h"
 #include "rtty.h"
 #include "screen_light.h"
@@ -341,6 +342,7 @@ static void services_start(void) {
     image_level_notice_init();   /* a newer card image wanted: said once per version */
     lv_timer_set_repeat_count(lv_timer_create(settings_note_cb, 3000, NULL), 1);
     lv_timer_set_repeat_count(lv_timer_create(update_notice_cb, 4000, NULL), 1);
+    clock_sync_start_check();
 }
 
 /* LVGL's clock (lv_tick_mono.h): the GUI loop sets it before each lv_timer_handler(), this thread every 5 ms

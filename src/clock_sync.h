@@ -19,6 +19,15 @@ extern "C" {
  * reads instead. why gets "NTP" or "GPS" */
 bool clock_sync_kept(const char **why);
 
+/* What FT8 may not override (F4OLI's order: WiFi, GPS, a time station, FT8; the clock chip only the start): NTP or the
+ * GPS keeping it, or a time station that set it since the radio started (each start the clock is set again). why gets
+ * "NTP", "GPS" or the station ("RWM 9996") */
+bool clock_sync_ft8_held(const char **why);
+
+/* Two minutes after the start, with neither NTP nor the GPS: if nothing set the clock since, say so (F4OLI: each start
+ * the clock is set again). LVGL thread */
+void clock_sync_start_check(void);
+
 /* The system clock moved by step seconds (and the clock chip with it), by is what said so ("FT8", "RWM 9996"). False
  * when it could not be set */
 bool clock_sync_step(double step, const char *by);

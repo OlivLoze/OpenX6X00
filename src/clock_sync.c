@@ -50,6 +50,7 @@
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 static char     last_by[24];
+static char     station_by[24];     /* a time station set the clock since the start: FT8 leaves it alone */
 static time_t   last_when;
 static double   last_step;
 static unsigned generation;
@@ -167,17 +168,47 @@ bool clock_sync_kept(const char **why) {
     double lat, lon;
     int    age;
 
-    if (gps_last_fix(&lat, &lon, &age) && age <= 10) {
-        if (why)
-            *why = "GPS";
-        return true;
-    }
+    /* NTP first: ntpd prefers the internet's servers to the GPS (stratum 4 in ntp.conf) */
     if (ntpd_synced() || ftx_clock_synced(NULL)) {
         if (why)
             *why = "NTP";
         return true;
     }
+    if (gps_last_fix(&lat, &lon, &age) && age <= 10) {
+        if (why)
+            *why = "GPS";
+        return true;
+    }
     return false;
+}
+
+#define START_CHECK_MS (2 * 60 * 1000)
+
+static void start_check_cb(lv_timer_t *t) {
+    (void)t;
+    if (clock_sync_kept(NULL) || clock_sync_generation() != 0)
+        return;
+    msg_update_text_fmt("Clock not set since the start (no WiFi, no GPS): APP > GPS / Clock > Listen, "
+                        "or FT8 with Auto Sync on");
+}
+
+void clock_sync_start_check(void) {
+    lv_timer_set_repeat_count(lv_timer_create(start_check_cb, START_CHECK_MS, NULL), 1);
+}
+
+bool clock_sync_ft8_held(const char **why) {
+    static char by[24];
+
+    if (clock_sync_kept(why))
+        return true;
+    pthread_mutex_lock(&lock);
+    snprintf(by, sizeof(by), "%s", station_by);
+    pthread_mutex_unlock(&lock);
+    if (!by[0])
+        return false;
+    if (why)
+        *why = by;
+    return true;
 }
 
 bool clock_sync_step(double step, const char *by) {
@@ -197,6 +228,8 @@ bool clock_sync_step(double step, const char *by) {
 
     pthread_mutex_lock(&lock);
     snprintf(last_by, sizeof(last_by), "%s", by);
+    if (strcmp(by, "FT8"))     /* a time station: it holds against FT8 until the radio stops */
+        snprintf(station_by, sizeof(station_by), "%s", by);
     last_when = to.tv_sec;
     last_step = step;
     generation++;
@@ -327,7 +360,7 @@ void clock_sync_ft8_auto(float sec, float slot, bool sending) {
 
     step = -est.ahead;
     pthread_mutex_unlock(&lock);
-    if (!go || clock_sync_kept(NULL))
+    if (!go || clock_sync_ft8_held(NULL))
         return;
     auto_last = now;
     if (clock_sync_step(step, "FT8"))
@@ -348,8 +381,8 @@ bool clock_sync_ft8_apply(char *msg, size_t size) {
     const char *why;
 
     clock_sync_ft8_get(&e);
-    if (clock_sync_kept(&why)) {
-        snprintf(msg, size, "%s keeps the clock: nothing to set", why);
+    if (clock_sync_ft8_held(&why)) {
+        snprintf(msg, size, "%s keeps the clock: nothing to set from FT8", why);
         return false;
     }
     if (!e.valid || time(NULL) - e.when > FT8_AGE_MAX_S) {

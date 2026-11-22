@@ -1410,21 +1410,16 @@ static void cq_modifier_cb(button_data_t *btn) {
  * it is left alone. The step is taken from the time to the nanosecond (FT4's and FT2's slots
  * start on fractions of a second, whole seconds missed them), and only a clock that moved goes
  * into the RTC */
-#define SYNC_GPS_AGE_S  10      /* a GPS fix this recent: gpsd feeds ntpd */
 #define SYNC_ON_SLOT_NS 50000000
 
 static void time_sync_cb(button_data_t *btn) {
     struct timespec now;
-    double          lat, lon;
-    int             err_ms, age;
+    const char     *why;
     int64_t         off, t;
 
-    if (ftx_clock_synced(&err_ms)) {
-        msg_update_text_fmt("Clock in sync (NTP, within %d ms): no Time Sync needed", err_ms);
-        return;
-    }
-    if (gps_last_fix(&lat, &lon, &age) && age <= SYNC_GPS_AGE_S) {
-        msg_update_text_fmt("The GPS keeps the clock: no Time Sync needed");
+    /* The same order as everywhere (clock_sync.c): NTP, the GPS, a time station set since the start, then FT8 */
+    if (clock_sync_ft8_held(&why)) {
+        msg_update_text_fmt("%s keeps the clock: no Time Sync needed", why);
         return;
     }
     clock_gettime(CLOCK_REALTIME, &now);

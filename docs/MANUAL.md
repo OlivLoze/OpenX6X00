@@ -4914,6 +4914,14 @@ The rows:
   have been open: the measure is taken there and kept 15 minutes.
 - Time station: what the time station gives (below).
 
+Which source sets the clock, first to last: NTP (WiFi), the GPS (ntpd takes the
+internet's servers before it), a time station, FT8; the clock chip is only where the
+clock starts. A source further down never moves a clock one above keeps: a time station
+heard since the start holds against FT8 (Auto, Set from FT8, FT8's Time Sync) until the
+radio is switched off, and at each start the clock is to be set again. Two minutes after
+a start with neither WiFi nor a GPS, if nothing set the clock, the radio says so ("Clock
+not set since the start").
+
 The buttons:
 
 | Button | Does |
@@ -4929,7 +4937,7 @@ Most stations on FT8 keep their clock from the internet or a GPS, so where
 their signals start in our slots says where our clock is. Each decode's
 start is noted; once at least 8 decodes over two slots agree (their median
 spread under 0.3 s), the median gives the clock's error. With FT8 Auto on,
-no NTP and no GPS, FT8 sets the clock itself in the middle of a slot when it
+no NTP, no GPS and no time station since the start, FT8 sets the clock itself in the middle of a slot when it
 is off by 0.2 s or more ("Clock -0.42 s from the FT8 stations heard"), at
 most every two minutes, never while transmitting. The step goes into the
 clock chip too. With FT8 Auto off it only measures: Set from FT8 takes it.
