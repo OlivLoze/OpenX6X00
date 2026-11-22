@@ -293,9 +293,13 @@ static bool to_me_fresh(const ft8_station_t *st) {
     return st->to_me_at && !st->seen && lv_tick_elaps(st->to_me_at) < CALLS_YOU_MS;
 }
 
+static bool called_lately(const ft8_station_t *st);
+
 /* Show: CQ also on the tiles and the lane: a station heard under Show: All in a QSO goes at once, not 2 minutes later */
 static bool st_shown(const ft8_station_t *st) {
-    return param_i_get(cfg_ft8_show_all) || st->cd.cell_type == CELL_RX_CQ || to_me_fresh(st);
+    /* a station that called us stays, red or seen: selecting it must not hide it under Show: CQ (found in the QSO
+     * with HA7TM, 22/11) */
+    return param_i_get(cfg_ft8_show_all) || st->cd.cell_type == CELL_RX_CQ || called_lately(st);
 }
 
 /* A station that called us stays first this long, red or seen: a tile does not jump pages as its red goes */
