@@ -49,6 +49,7 @@ void clock_beacon_audio(unsigned int n, float *samples);
 typedef struct {
     time_t at;              /* the minute it marked, by the clock */
     float  raw;             /* the minute's start minus the marker, s */
+    float  ahead;           /* the clock ahead (+) or behind (-) by it, the delay as it was then taken off */
     float  snr_db;
     bool   agree;           /* within 30 ms of the one before it: a result */
 } clock_beacon_marker_t;

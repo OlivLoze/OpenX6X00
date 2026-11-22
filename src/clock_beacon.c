@@ -166,7 +166,8 @@ static void run_over(uint64_t k) {
         memmove(&pub.hist[0], &pub.hist[1], (CLOCK_BEACON_HIST - 1) * sizeof(pub.hist[0]));
         pub.hist_n--;
     }
-    pub.hist[pub.hist_n++] = (clock_beacon_marker_t){(time_t)llround(t / 60.0) * 60, (float)raw, snr, agree};
+    pub.hist[pub.hist_n++] = (clock_beacon_marker_t){(time_t)llround(t / 60.0) * 60, (float)raw,
+                                                     (float)(-raw - clock_sync_beacon_delay(NULL)), snr, agree};
     pthread_mutex_unlock(&lock);
     prev_t   = t;
     prev_raw = raw;

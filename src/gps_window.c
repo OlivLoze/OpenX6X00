@@ -52,6 +52,7 @@ static lv_obj_t *src_box[SRC_N], *src_name[SRC_N], *src_detail[SRC_N], *src_tag[
 
 /* Station view */
 static lv_obj_t *l_st_name, *l_st_freq, *chip, *l_chip, *l_holder, *dial, *l_next, *tone_bar, *l_tone, *sched;
+static lv_obj_t *l_hist_hint;
 static lv_obj_t *hist_box[CLOCK_BEACON_HIST], *hist_t[CLOCK_BEACON_HIST], *hist_off[CLOCK_BEACON_HIST],
     *hist_db[CLOCK_BEACON_HIST], *hist_ok[CLOCK_BEACON_HIST];
 static float     tone_db;
@@ -434,14 +435,16 @@ static void station_view_update(void) {
         lv_label_set_text(l_chip, "LISTENING");
         lv_obj_set_style_text_color(l_chip, TC(ok), 0);
     }
-    if (clock_sync_kept(&why))
-        lv_label_set_text_fmt(l_holder, "Clock kept by %s: learning the delay", why);
+    bool kept = clock_sync_kept(&why);
+
+    if (kept)
+        lv_label_set_text_fmt(l_holder, "Clock: %s, learning the delay", why);
     else if (h == SRC_STATION && clock_sync_station(by, sizeof(by), &(time_t){0}, &(double){0}))
-        lv_label_set_text_fmt(l_holder, "Clock set by %s", by);
+        lv_label_set_text_fmt(l_holder, "Clock: set by %s", by);
     else if (h == SRC_FT8)
-        lv_label_set_text(l_holder, "Clock set by FT8: a marker pair sets it better");
+        lv_label_set_text(l_holder, "Clock: set by FT8");
     else
-        lv_label_set_text(l_holder, "Clock chip: a marker pair sets it");
+        lv_label_set_text(l_holder, "Clock: clock chip");
 
     if (next < 0)
         lv_label_set_text(l_next, "-");
@@ -454,21 +457,24 @@ static void station_view_update(void) {
     lv_obj_invalidate(tone_bar);
     lv_obj_invalidate(sched);
 
-    float delay = clock_sync_beacon_delay(NULL);
-
+    lv_label_set_text(l_hist_hint, !st.on ? "Listen: its markers come here, two that agree set the clock"
+                                   : st.hist_n ? "" : "Listening: the first marker comes at the next one");
     for (int i = 0; i < CLOCK_BEACON_HIST; i++) {
         if (i >= st.hist_n || !st.on) {
             lv_obj_add_flag(hist_box[i], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         const clock_beacon_marker_t *m = &st.hist[i];
-        float                        ahead = -m->raw - delay;
         struct tm                    tm;
 
         gmtime_r(&m->at, &tm);
         lv_obj_clear_flag(hist_box[i], LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text_fmt(hist_t[i], "%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
-        snprintf(t, sizeof(t), "%s %.3f s", ahead >= 0 ? "ahead" : "behind", fabsf(ahead));
+        /* under NTP or the GPS the clock is right: what the marker measures is the delay to the measure */
+        if (kept)
+            snprintf(t, sizeof(t), "delay %.3f s", -m->raw);
+        else
+            snprintf(t, sizeof(t), "%s %.3f s", m->ahead >= 0 ? "ahead" : "behind", fabsf(m->ahead));
         lv_label_set_text(hist_off[i], i == 0 && !m->agree ? "first" : t);
         lv_label_set_text_fmt(hist_db[i], "%.0f dB", m->snr_db);
         lv_label_set_text(hist_ok[i], m->agree ? "agree" : "");
@@ -578,6 +584,7 @@ static void build_station_view(void) {
 
     cap = label(v, &sony_18, TC(text_mute), HIST_X, 98);
     lv_label_set_text(cap, "Markers heard");
+    l_hist_hint = label(v, &sony_18, TC(text_mute), HIST_X + 10, 126);
     for (int i = 0; i < CLOCK_BEACON_HIST; i++) {
         lv_obj_t *b = hist_box[i] = box(v, HIST_X, 122 + i * 29, HIST_W, 27, TC(row));
 
@@ -717,6 +724,7 @@ static void open_cb(lv_obj_t *parent) {
     lv_obj_add_event_cb(win, report_cb, EVENT_GPS, NULL);
     lv_obj_add_event_cb(win, window_key_cb, LV_EVENT_KEY, NULL);
     lv_group_add_obj(keyboard_group, win);
+    lv_group_set_editing(keyboard_group, true);     /* the MFK turns: the stations */
 
     /* ten times a second: the dial's hand, the tone's level */
     status_timer = lv_timer_create(status_cb, 100, NULL);
@@ -732,6 +740,17 @@ static void close_cb(void) {
 static void window_key_cb(lv_event_t *e) {
     uint32_t key = *(uint32_t *)lv_event_get_param(e);
 
+    if (key == LV_KEY_RIGHT || key == LV_KEY_DOWN || key == LV_KEY_LEFT || key == LV_KEY_UP) {
+        /* the MFK steps the stations, as Station does, both ways */
+        int step = key == LV_KEY_RIGHT || key == LV_KEY_DOWN ? 1 : clock_beacons_n - 1;
+
+        station = (station + step) % clock_beacons_n;
+        buttons_refresh(&btn_station);
+        if (dialog.audio_cb)
+            listen_start();
+        status_cb(NULL);
+        return;
+    }
     if (key == LV_KEY_ESC)
         dialog_destruct();
     else if (key == KEY_VOL_LEFT_EDIT || key == KEY_VOL_LEFT_SELECT)

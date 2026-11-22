@@ -4904,7 +4904,8 @@ set it in the field when neither WiFi (NTP) nor a GPS is there. The clock
 chip keeps the time while the radio is off, but it drifts a few seconds a
 week and FT8 and JS8 need it within about a second.
 
-Two views, View changes between them (Listen goes to Station):
+Two views, View changes between them (Listen goes to Station); the MFK steps the
+stations both ways, as Station does:
 
 - Clock: the time in UTC, large, and the date; under it, in a framed box, what
   keeps the clock now ("NTP (WiFi)", "GPS", "RWM 9996 set +0.031 s at 11:12,
@@ -4918,7 +4919,9 @@ Two views, View changes between them (Listen goes to Station):
   marker at the top, the second hand, 15 and 45, and the next marker's
   countdown. The marker tone's level (dB over the noise, five times a second),
   the last four markers heard (their time, how far the clock is off, their
-  level, "agree" when one is within 30 ms of the one before: a result), and the
+  level, "agree" when one is within 30 ms of the one before: a result; while NTP or
+  the GPS keeps the clock, "delay 0.031 s": what the radio learns, the clock being
+  right), and the
   hour as a bar, the minutes with a marker green, now marked.
 
 Which source sets the clock, first to last: NTP (WiFi), the GPS (ntpd takes the
