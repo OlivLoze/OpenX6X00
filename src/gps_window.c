@@ -260,12 +260,14 @@ static void clock_view_update(void) {
         lit(src_box[i], on);
         if (on)
             tag = "KEEPS IT";
-        else if (i < h || (i == SRC_GPS && !gps_fix) || (i == SRC_NTP && !clock_sync_ntp()))
-            tag = "-";
+        else if ((i == SRC_GPS && !gps_fix) || (i == SRC_NTP && !clock_sync_ntp()))
+            tag = "-";      /* absent */
         else if (i == SRC_FT8 && !param_i_get(cfg_clock_ft8_auto))
             tag = "off";
+        else if (i > h)
+            tag = "waits";  /* one above keeps the clock: it measures, it may not set it */
         else
-            tag = "waits";
+            tag = "ready";  /* nothing above keeps it (the clock chip): it may set it */
         lv_label_set_text(src_tag[i], tag);
         lv_obj_set_style_text_color(src_tag[i], on ? TC(ok) : TC(text_mute), 0);
         lv_obj_set_style_text_color(src_name[i], on || i > h || (i == SRC_GPS && gps_fix) ? TC(text) : TC(text_mute),
