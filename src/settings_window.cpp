@@ -1409,6 +1409,11 @@ static struct {
     lv_obj_t             *rx;
     lv_obj_t             *vol;
     lv_obj_t             *mute;
+    lv_obj_t             *ctl_pill;     /* the adapter in use: a USB dongle or the radio's own (bt-dongle) */
+    lv_obj_t             *ctl;
+    lv_obj_t             *mic_pill;     /* a hands-free headset's mic for the side PTT key (btaudio-ctl) */
+    lv_obj_t             *mic;
+    lv_obj_t             *mic_gain;
     wl_row_t              rows[BT_ROWS];
     std::vector<bt_dev_t> devs;
     std::vector<bt_dev_t> found;    /* not paired, seen since the last Scan */
@@ -2399,6 +2404,15 @@ static void bt_vol_cb(lv_event_t *e) {
     bt_vol_send();
 }
 
+/* Read by audio.c at each block of the headset's mic: it changes on the air */
+static void bt_mic_gain_cb(lv_event_t *e) {
+    lv_obj_t *obj  = lv_event_get_target(e);
+    int       gain = lv_slider_get_value(obj);
+
+    lv_label_set_text_fmt((lv_obj_t *)lv_obj_get_user_data(obj), "%i dB", gain);
+    param_i_set(cfg_bt_mic_gain, gain);
+}
+
 static void bt_mute_cb(lv_event_t *e) {
     btaudio_mute_set(lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED));
 }
@@ -2435,6 +2449,8 @@ static uint8_t make_bt_devices(uint8_t row) {
     return row + 1;
 }
 
+static lv_obj_t * bt_value_row(uint8_t row, const char *label, lv_obj_t **pill);
+
 static uint8_t make_headphones(uint8_t row) {
     lv_obj_t *obj;
 
@@ -2455,6 +2471,20 @@ static uint8_t make_headphones(uint8_t row) {
     wl_row_label(row, "Mute speaker");
     bt.mute = bt_switch_cell(row, 1, btaudio_mute_get(), bt_mute_cb);
     lv_label_set_text(wl_note(row), "AF 0 while connected");
+    row++;
+
+    bt.mic = bt_value_row(row++, "Mic", &bt.mic_pill);
+
+    int32_t gain = param_i_get(cfg_bt_mic_gain);
+
+    wl_row_label(row, "Mic gain");
+    obj = lv_obj_create(grid);
+    lv_obj_set_size(obj, SMALL_6, ROW_H);
+    lv_obj_set_grid_cell(obj, LV_GRID_ALIGN_START, 1, 6, LV_GRID_ALIGN_CENTER, row, 1);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    bt.mic_gain = row_slider(obj, gain, -20, 10, SMALL_4, bt_mic_gain_cb, NULL, "%i dB", gain);
+    lv_obj_align(bt.mic_gain, LV_ALIGN_LEFT_MID, 10, 0);
     row++;
     return row;
 }
@@ -2844,6 +2874,7 @@ static void wl_timer_cb(lv_timer_t *t) {
 static void bt_forget_objs() {
     bt.pill = bt.state = bt.addr = bt.cat = NULL;
     bt.scan_btn = bt.scan_note = bt.rx = bt.vol = bt.mute = NULL;
+    bt.ctl_pill = bt.ctl = bt.mic_pill = bt.mic = bt.mic_gain = NULL;
 }
 
 static void wl_delete_cb(lv_event_t *e) {
@@ -4802,6 +4833,33 @@ static void bt_adapter_update() {
     }
     lv_label_set_text(bt.state, text);
     lv_label_set_text(bt.addr, a.present && a.addr[0] ? a.addr : "-");
+
+    bool dongle = false;
+    char src[128];
+
+    if (!bt_adapter_sys(NULL, 0, &dongle)) {
+        wl_pill(bt.ctl_pill, NULL, 0, 0);
+        lv_label_set_text(bt.ctl, "-");
+    } else if (dongle) {
+        wl_pill(bt.ctl_pill, "USB dongle", theme_hex(TC_ok_bg), theme_hex(TC_ok));
+        lv_label_set_text(bt.ctl, "radio's own off");
+    } else {
+        wl_pill(bt.ctl_pill, "radio's own", theme_hex(TC_chip), theme_hex(TC_text_value));
+        lv_label_set_text(bt.ctl, "A2DP only, no mic");
+    }
+
+    /* The mic: hands-free on a dongle (btaudio-ctl names it), else headphones without one, else nothing */
+    if (btaudio_mic_source(src, sizeof(src))) {
+        wl_pill(bt.mic_pill, "hands-free", theme_hex(TC_ok_bg), theme_hex(TC_ok));
+        lv_label_set_text(bt.mic, "side PTT sends it");
+        lv_obj_clear_state(bt.mic_gain, LV_STATE_DISABLED);
+    } else {
+        bool hp = access("/tmp/btaudio-hp", F_OK) == 0;
+
+        wl_pill(bt.mic_pill, hp ? "none" : NULL, theme_hex(TC_chip), theme_hex(TC_text_value));
+        lv_label_set_text(bt.mic, hp ? "music only (A2DP)" : "no headset");
+        lv_obj_add_state(bt.mic_gain, LV_STATE_DISABLED);
+    }
 }
 
 /* btcat writes the number of its clients while it runs */
@@ -4869,6 +4927,7 @@ static void make_bluetooth_page() {
     row = make_bt_power(row);
     bt.state = bt_value_row(row++, "Status", &bt.pill);
     bt.addr = bt_value_row(row++, "Address", NULL);
+    bt.ctl = bt_value_row(row++, "Controller", &bt.ctl_pill);
     row = make_bt_pairing(row);
     card_end(row);
 

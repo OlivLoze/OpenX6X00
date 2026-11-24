@@ -5270,14 +5270,23 @@ With a Bluetooth USB dongle in the radio's USB-A port, a headset with a mic
 (AirPods, for one) is used hands-free (HFP): you hear the radio in it and the
 radio's PTT key sends its mic.
 
-- The dongle has to be in at the start: it then takes over from the radio's
-  own Bluetooth for everything (headphones, the CAT phone, keyboards), and
-  the chip's Bluetooth is let go (`bt-adapter`), which leaves its WiFi on its
-  own. Pairings are the adapter's: pair each device once more on the dongle.
-  Without a dongle, nothing changes.
+- The dongle takes over from the radio's own Bluetooth for everything
+  (headphones, the CAT phone, keyboards), and the chip's Bluetooth is let go
+  (`bt-dongle`), which leaves its WiFi on its own. Plugged while the radio
+  runs, it takes over within seconds; unplugged, the chip's Bluetooth comes
+  back at once (`98-bt-dongle.rules`). Pairings are the adapter's: pair each
+  device once on the dongle, once on the chip. Without a dongle, nothing
+  changes. Settings > Bluetooth > ADAPTER says which one is in use
+  (Controller: *USB dongle*, or *radio's own*).
 - A headset with a mic goes hands-free by itself when it connects, one
   without stays on A2DP. Hands-free audio is 16 kHz (mSBC), voice quality.
 - VOL is the headset's volume, as for A2DP headphones.
+- Settings > Bluetooth > HEADPHONES: Mic says *hands-free* (the side PTT
+  sends it), *none* (headphones without a mic, or on the radio's own
+  Bluetooth: music only) or nothing (no headset); Mic gain, -20 to +10 dB,
+  -6 by default, is the headset mic's level on the air, read as it plays:
+  turn it down if the ALC climbs high (the AirPods Pro drove it to 7.6 at
+  0 dB).
 - The PTT key on the radio's side keys the radio with the headset's mic, as
   an app's audio (the modem); the screen says `TX: MIC BT`. Let go of the key
   and it is back on receive. The headset gone while you talk lets go too

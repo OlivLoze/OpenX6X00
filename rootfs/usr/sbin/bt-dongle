@@ -1,0 +1,66 @@
+#!/bin/sh
+# The Bluetooth adapter in use: a USB dongle when one is plugged, else the radio's own (the RTL8723BU WiFi/BT chip on
+# the MUSB host). With a dongle the radio's own Bluetooth is let go (apply): the GUI (bt_dev.c), btcat and
+# btaudio-ctl all see one adapter, the dongle, whatever number the kernel gave it, and the chip's WiFi no longer
+# shares its antenna with Bluetooth. The dongle is also the only one on which headphones go hands-free (HFP, the
+# headset's mic for TX, btaudio-ctl): on the chip SCO gives no audio and drops the WiFi.
+#
+#   bt-dongle          its name (hci0, hci1...), nothing while there is none
+#   bt-dongle dongle   true when it is a dongle
+#   bt-dongle apply    with a dongle: btusb let go of the chip's Bluetooth interfaces (its WiFi stays)
+#   bt-dongle removed  udev, an adapter gone (98-bt-dongle.rules): without a dongle left, the chip's
+#                       Bluetooth back (btusb bound again), in the background
+#
+# A dongle plugged while the radio runs: the adapter's add runs btcat-setup (bt_start.sh), which applies.
+# Unplugged: the chip's Bluetooth comes back at once, and its add runs btcat-setup in turn. Pairings belong to
+# an adapter: a device paired on the dongle is not paired on the chip, and the other way round.
+
+UNBOUND=/tmp/bt-dongle.unbound    # the chip's interfaces apply let go, for removed
+
+internal() { case "$(readlink "/sys/class/bluetooth/$1")" in *musb-hdrc*) return 0;; esac; return 1; }
+
+name() {
+	own=""
+	for d in /sys/class/bluetooth/hci*; do
+		h=${d##*/}
+		case "$h" in *:*|"hci*") continue;; esac
+		if internal "$h"; then own=${own:-$h}; else echo "$h"; return 0; fi
+	done
+	[ -n "$own" ] && echo "$own"
+}
+
+case "$1" in
+	"") name;;
+	dongle)
+		h=$(name)
+		[ -n "$h" ] && ! internal "$h";;
+	apply)
+		h=$(name)
+		{ [ -n "$h" ] && ! internal "$h"; } || exit 0
+		for d in /sys/class/bluetooth/hci*; do
+			o=${d##*/}
+			case "$o" in *:*|"hci*") continue;; esac
+			internal "$o" || continue
+			# .../3-1/3-1:1.0/bluetooth/hci0: the chip's USB device, its interfaces bound to btusb
+			dev=$(readlink -f "$d/../../..")
+			for i in "$dev"/"${dev##*/}":*; do
+				if [ "$(basename "$(readlink "$i/driver")")" = btusb ]; then
+					echo "${i##*/}" > /sys/bus/usb/drivers/btusb/unbind && echo "${i##*/}" >> $UNBOUND
+				fi
+			done
+			echo "bt-dongle: $h (dongle) in use, the radio's own Bluetooth ($o) let go"
+		done;;
+	removed)
+		[ -s $UNBOUND ] || exit 0
+		(
+			sleep 1     # the adapter going away may still be listed
+			h=$(name)
+			{ [ -n "$h" ] && ! internal "$h"; } && exit 0     # another dongle still there
+			while read -r i; do
+				echo "$i" > /sys/bus/usb/drivers/btusb/bind
+			done < $UNBOUND
+			rm -f $UNBOUND
+			logger -t bt-dongle "dongle gone: the radio's own Bluetooth back"
+		) </dev/null >/dev/null 2>&1 &;;
+	*) echo "Usage: $0 [dongle|apply|removed]"; exit 1;;
+esac

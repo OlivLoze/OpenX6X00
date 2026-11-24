@@ -68,9 +68,9 @@ void bt_dev_activity(char *out, int size);
 /* The adapter as the last refresh saw it. */
 void bt_dev_adapter(bt_adapter_t *out);
 
-/* The adapter in use: a USB dongle when one is plugged, else the radio's own; its name ("hci1"), false while there
- * is none. Any thread (sysfs only) */
-bool bt_adapter_sys(char *out, size_t size);
+/* The adapter in use: a USB dongle when one is plugged, else the radio's own; its name ("hci1") and whether it is a
+ * dongle (either may be NULL), false while there is none. Any thread (sysfs only) */
+bool bt_adapter_sys(char *out, size_t size, bool *dongle);
 
 /* Seconds left in the pairing window (btcat-ctl's), 0 when closed. */
 int bt_dev_visible_s(void);

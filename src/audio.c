@@ -388,8 +388,10 @@ static void mic_read_cb(pa_stream *s, size_t nbytes, void *udata) {
     n = LV_MIN(mic_play ? pa_stream_writable_size(mic_play) : 0, nbytes) & ~(size_t)1;
     /* a hole (buf NULL) or no room: dropped, the voice stays on time */
     if (buf && n && pa_stream_begin_write(mic_play, &out, &n) == 0 && out) {
-        memcpy(out, buf, n & ~(size_t)1);
-        pa_stream_write(mic_play, out, n & ~(size_t)1, NULL, 0, PA_SEEK_RELATIVE);
+        n &= ~(size_t)1;
+        /* Settings > Bluetooth > Mic gain, read at each block: it changes on the air */
+        audio_gain_db((int16_t *)buf, n / 2, param_i_get(cfg_bt_mic_gain), out);
+        pa_stream_write(mic_play, out, n, NULL, 0, PA_SEEK_RELATIVE);
     }
     pa_stream_drop(s);
 }

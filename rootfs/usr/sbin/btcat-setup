@@ -6,15 +6,15 @@ BTCAT_ALIAS="X6100"
 [ -r /etc/default/btcat ] && . /etc/default/btcat
 [ -r /mnt/btcat.conf ] && . /mnt/btcat.conf
 
-for i in $(seq 1 30); do [ -n "$(bt-adapter)" ] && break; sleep 1; done
-# A Bluetooth USB dongle replaces the radio's own Bluetooth (bt-adapter): the chip's comes up late (its USB host
+for i in $(seq 1 30); do [ -n "$(/usr/sbin/bt-dongle)" ] && break; sleep 1; done
+# A Bluetooth USB dongle replaces the radio's own Bluetooth (bt-dongle): the chip's comes up late (its USB host
 # starts after the dongle's), it is let go once it is there, before bluetoothd hands it out as an adapter
-if bt-adapter dongle; then
+if /usr/sbin/bt-dongle dongle; then
 	for i in $(seq 1 30); do
 		for h in /sys/class/bluetooth/hci*; do case "$(readlink "$h")" in *musb-hdrc*) break 2;; esac; done
 		sleep 1
 	done
-	bt-adapter apply
+	/usr/sbin/bt-dongle apply
 fi
 # The WiFi/BT chip can reset on its own (it drops off USB and comes back): bluetoothd
 # sometimes exits with it and nothing started it again ("Bluetooth service not running")

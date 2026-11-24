@@ -423,6 +423,10 @@ class SettingsManager {
     // Voice messages (the Field Ops voice CQ too): playback level, dB
     Parameter<int32_t> p_voice_msg_gain{"voice_msg_gain", 0, -20, 10,
         StorageType::GLOBAL, pending_writes_, &global_params_};
+    // A hands-free Bluetooth headset's mic on the air (Settings > Bluetooth > Mic gain), dB: -6 so that F4OLI's
+    // AirPods Pro did not drive the ALC to 7.6 (24/11/2026)
+    Parameter<int32_t> p_bt_mic_gain{"bt_mic_gain", -6, -20, 10,
+        StorageType::GLOBAL, pending_writes_, &global_params_};
 
     // SWR scan
     Parameter<int32_t> p_swrscan_linear{"swrscan_linear", true, 0, 1,

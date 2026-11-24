@@ -2459,7 +2459,7 @@ static void battery_log(const hw_pack_t *p, bool volts_ext) {
         .charging = p->charging,
         .tx_s = tx_s, .tx_w = tx_s > 0 ? tx_ws / tx_s : 0, .bl = backlight_level(),
         .wifi = wifi_get_status() != WIFI_OFF,
-        .bt = bt_adapter_sys(NULL, 0),     /* the radio's own or a USB dongle (bt-adapter) */
+        .bt = bt_adapter_sys(NULL, 0, NULL),     /* the radio's own or a USB dongle (bt-dongle) */
         .hp = access("/tmp/btaudio-hp", F_OK) == 0,
     };
     bool chg, approx;

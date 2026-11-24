@@ -14,7 +14,7 @@
 #
 # A2DP on the radio's own Bluetooth: there HFP/HSP (SCO) gives no audio and
 # drops the WiFi (see also /etc/pulse/system.pa.d/btaudio.pa). On a USB
-# dongle (bt-adapter) a headset with a mic goes hands-free (HFP) by itself
+# dongle (bt-dongle) a headset with a mic goes hands-free (HFP) by itself
 # (F4OLI, 24/11/2026): its mic is named in $MIC for the GUI, whose PTT key
 # sends it on the air (audio.c audio_mic_bt_begin), and VOL is its volume
 # as for A2DP headphones. Headphones without a mic stay on A2DP.
@@ -50,7 +50,7 @@ hp_sinks() { pactl list short sinks 2>/dev/null | awk '$2 ~ /^bluez_sink\..*(a2d
 # A card with neither (a phone connected for CAT) is left alone
 force_a2dp() {
 	hfp=no
-	/usr/sbin/bt-adapter dongle && hfp=yes
+	/usr/sbin/bt-dongle dongle && hfp=yes
 	pactl list cards 2>/dev/null | awk -v hfp=$hfp '
 		$1 == "Name:" {n = $2; a = 0; h = 0}
 		$1 == "a2dp_sink:" {a = 1}

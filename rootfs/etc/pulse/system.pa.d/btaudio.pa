@@ -12,7 +12,7 @@ load-module module-bluetooth-policy auto_switch=0 a2dp_source=false ag=false
 # Keep the default sink/source on the radio codec when a device connects.
 unload-module module-switch-on-connect
 
-# HFP for a headset with a mic on a Bluetooth USB dongle (bt-adapter), the
+# HFP for a headset with a mic on a Bluetooth USB dongle (bt-dongle), the
 # radio as the audio gateway (native backend, no oFono): btaudio-ctl puts such
 # a card on handsfree_head_unit, every other on A2DP. On the radio's own
 # Bluetooth (RTL8723BU on the MUSB host) SCO gives no audio and drops the

@@ -114,6 +114,7 @@ ParamInt         *cfg_pskreporter         = nullptr;
 ParamInt         *cfg_field_boot          = nullptr;
 ParamInt         *cfg_field_respot        = nullptr;
 ParamInt         *cfg_voice_msg_gain      = nullptr;
+ParamInt         *cfg_bt_mic_gain         = nullptr;
 ParamInt         *cfg_ft8_max_repeats     = nullptr;
 ParamInt         *cfg_ft8_info            = nullptr;
 ParamInt         *cfg_swrscan_linear      = nullptr;
@@ -325,6 +326,7 @@ void cfg_api_init(void (*on_db_error)(const char *)) {
     cfg_field_boot       = &cfg_sm.p_field_boot;
     cfg_field_respot     = &cfg_sm.p_field_respot;
     cfg_voice_msg_gain   = &cfg_sm.p_voice_msg_gain;
+    cfg_bt_mic_gain      = &cfg_sm.p_bt_mic_gain;
     cfg_ft8_max_repeats  = &cfg_sm.p_ft8_max_repeats;
     cfg_ft8_info         = &cfg_sm.p_ft8_info;
     cfg_swrscan_linear   = &cfg_sm.p_swrscan_linear;

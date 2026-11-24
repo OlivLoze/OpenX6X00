@@ -148,6 +148,7 @@ extern ParamInt *cfg_pskreporter;    // p_pskreporter
 extern ParamInt *cfg_field_boot;     // p_field_boot
 extern ParamInt *cfg_field_respot;   // p_field_respot
 extern ParamInt *cfg_voice_msg_gain; // p_voice_msg_gain
+extern ParamInt *cfg_bt_mic_gain; // p_bt_mic_gain
 extern ParamInt *cfg_ft8_max_repeats; // p_ft8_max_repeats
 extern ParamInt *cfg_ft8_info;       // p_ft8_info
 

@@ -163,9 +163,10 @@ static bool addr_ok(const char *addr) {
     return true;
 }
 
-/* The Bluetooth adapter in use, as /usr/sbin/bt-adapter picks it: a USB dongle when one is plugged, else the radio's
- * own (the RTL8723BU on the MUSB host). Its name ("hci1") in out; false while there is none */
-bool bt_adapter_sys(char *out, size_t size) {
+/* The Bluetooth adapter in use, as /usr/sbin/bt-dongle picks it: a USB dongle when one is plugged, else the radio's
+ * own (the RTL8723BU on the MUSB host). Its name ("hci1") in out, whether it is a dongle in dongle (either may be
+ * NULL); false while there is none */
+bool bt_adapter_sys(char *out, size_t size, bool *dongle) {
     DIR           *d = opendir("/sys/class/bluetooth");
     struct dirent *e;
     char           own[16] = "", link[256], p[300];
@@ -188,12 +189,14 @@ bool bt_adapter_sys(char *out, size_t size) {
             continue;
         }
         if (out) snprintf(out, size, "%s", e->d_name);
+        if (dongle) *dongle = true;
         found = true;
         break;
     }
     closedir(d);
     if (!found && own[0]) {
         if (out) snprintf(out, size, "%s", own);
+        if (dongle) *dongle = false;
         found = true;
     }
     return found;
@@ -493,7 +496,7 @@ static void do_refresh(void) {
     bt_adapter_t  ad = { .seen = true };
     char          hci[16];
 
-    if (bt_adapter_sys(hci, sizeof(hci))) {
+    if (bt_adapter_sys(hci, sizeof(hci), NULL)) {
         char p[sizeof(adapter_path)];
 
         snprintf(p, sizeof(p), "/org/bluez/%s", hci);
