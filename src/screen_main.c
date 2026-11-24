@@ -787,8 +787,8 @@ static void mic_ptt_end(void);
 static bool ptt_key(keypad_state_t state) {
     bool ok = true;
 
-    if (state != KEYPAD_PRESS) {
-        mic_ptt_end();      /* the headset's TX too, whichever way it is let go */
+    if (state == KEYPAD_RELEASE || state == KEYPAD_LONG_RELEASE) {
+        mic_ptt_end();      /* the headset's TX too, whichever way it is let go; not at KEYPAD_LONG, the key held on */
     }
     if (state == KEYPAD_PRESS) {
         dialog_msg_voice_ptt_pressed();
