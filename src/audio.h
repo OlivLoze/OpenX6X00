@@ -43,6 +43,12 @@ bool audio_play_lowlat_begin(void);
 void audio_play_lowlat_end(void);
 bool audio_play_if_room(int16_t *buf, size_t samples);
 
+/* A hands-free headset's mic into the codec (its PulseAudio source, btaudio_mic_source), from the PTT key while the
+ * modem is keyed; lost: the headset went away meanwhile (see audio.c) */
+bool audio_mic_bt_begin(const char *source);
+void audio_mic_bt_end(void);
+bool audio_mic_bt_lost(void);
+
 void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out);
 void audio_gain_db_transition(int16_t *buf, size_t samples, float gain1, float gain2, int16_t *out);
 

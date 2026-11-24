@@ -1,4 +1,4 @@
-# Bluetooth audio: A2DP headphones only, no automatic routing.
+# Bluetooth audio: A2DP headphones, HFP headsets on a dongle, no automatic routing.
 # The RX audio goes to the headphones through a loopback that
 # /usr/sbin/btaudio-ctl loads when asked to (Settings -> Wireless).
 .nofail
@@ -12,7 +12,11 @@ load-module module-bluetooth-policy auto_switch=0 a2dp_source=false ag=false
 # Keep the default sink/source on the radio codec when a device connects.
 unload-module module-switch-on-connect
 
-# No HFP/HSP at all: on this radio (RTL8723BU on the MUSB host) SCO gives no
-# audio and drops the WiFi. headset=ofono without oFono = no headset backend.
+# HFP for a headset with a mic on a Bluetooth USB dongle (bt-adapter), the
+# radio as the audio gateway (native backend, no oFono): btaudio-ctl puts such
+# a card on handsfree_head_unit, every other on A2DP. On the radio's own
+# Bluetooth (RTL8723BU on the MUSB host) SCO gives no audio and drops the
+# WiFi: there btaudio-ctl never leaves A2DP. HSP stays off
+# (enable_native_hsp_hs=false): the headset profile of old headsets only.
 unload-module module-bluetooth-discover
-load-module module-bluetooth-discover headset=ofono
+load-module module-bluetooth-discover headset=native enable_native_hsp_hs=false

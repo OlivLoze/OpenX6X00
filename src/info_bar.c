@@ -402,7 +402,7 @@ static void status_update(void *arg) {
  * The tools are skipped while the adapter is down. */
 static void poll_bluetooth(info_status_t *st) {
     int up = 0, con = 0, a2dp = 0;
-    FILE *f = popen("up=$(hciconfig hci0 2>/dev/null | grep -c 'UP RUNNING'); echo $up; "
+    FILE *f = popen("up=$(hciconfig $(/usr/sbin/bt-adapter) 2>/dev/null | grep -c 'UP RUNNING'); echo $up; "
                     "[ \"$up\" = 1 ] && { hcitool con 2>/dev/null | grep -c ACL; "
                     "pactl list sinks short 2>/dev/null | grep -c bluez_sink; }", "r");
 

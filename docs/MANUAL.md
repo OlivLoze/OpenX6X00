@@ -1042,7 +1042,7 @@ yet, in colour when working:
 |---|---|
 | WiFi | green connected; grey on, no network; dark off |
 | Bluetooth | blue a device connected; grey on, nothing connected; dark off |
-| Note | blue Bluetooth headphones connected (A2DP) |
+| Note | blue Bluetooth headphones connected (A2DP, or hands-free on a dongle) |
 | Keyboard | amber a Bluetooth CAT client connected; grey CAT bridge ready |
 | Arrow | green GPS position (fix in the last 10 s); grey GPS on, no fix |
 | DX | green DX cluster connected; grey connecting or retrying; dark stopped |
@@ -5233,9 +5233,10 @@ pairing and connection in DEVICES, the audio switches in HEADPHONES.
 | Volume | the headphones sink volume |
 | Mute speaker | AF volume and TX monitor 0 while the headphones are connected, back to the previous values when they disconnect. The AF volume does not change the audio sent to the headphones. |
 
-- Only A2DP is used: HFP/HSP (SCO) gives no audio on the X6100 and drops the
-  WiFi, so PulseAudio has no headset backend
-  (`rootfs/etc/pulse/system.pa.d/btaudio.pa`). The same file stops PulseAudio
+- On the radio's own Bluetooth only A2DP is used: HFP/HSP (SCO) gives no
+  audio on the X6100's chip and drops the WiFi
+  (`rootfs/etc/pulse/system.pa.d/btaudio.pa`). With a Bluetooth USB dongle,
+  see [a headset's mic on the air](#a-headsets-mic-on-the-air). The same file stops PulseAudio
   from looping a phone or tablet that connects for CAT (it also appears as an
   A2DP source) into the radio TX audio.
 - The headphones get mono audio, like the radio's, with about 0.4 s of delay;
@@ -5262,6 +5263,30 @@ pairing and connection in DEVICES, the audio switches in HEADPHONES.
 > weak anyway: for the web configurator and the TCI server a cable works better, a
 > USB Ethernet adapter ([Ethernet](#ethernet)) or a phone on
 > [USB tethering](#usb-tethering).
+
+#### A headset's mic on the air
+
+With a Bluetooth USB dongle in the radio's USB-A port, a headset with a mic
+(AirPods, for one) is used hands-free (HFP): you hear the radio in it and the
+radio's PTT key sends its mic.
+
+- The dongle has to be in at the start: it then takes over from the radio's
+  own Bluetooth for everything (headphones, the CAT phone, keyboards), and
+  the chip's Bluetooth is let go (`bt-adapter`), which leaves its WiFi on its
+  own. Pairings are the adapter's: pair each device once more on the dongle.
+  Without a dongle, nothing changes.
+- A headset with a mic goes hands-free by itself when it connects, one
+  without stays on A2DP. Hands-free audio is 16 kHz (mSBC), voice quality.
+- VOL is the headset's volume, as for A2DP headphones.
+- The PTT key on the radio's side keys the radio with the headset's mic, as
+  an app's audio (the modem); the screen says `TX: MIC BT`. Let go of the key
+  and it is back on receive. The headset gone while you talk lets go too
+  (`PTT off: the headset is gone`). The hand mic's PTT keys with the hand
+  mic as before; in CW the key keys the carrier as before. While an app
+  (FT8, a voice message) is on the air the key does nothing.
+- Tried on F4OLI's radio with a CSR dongle and AirPods Pro (24/11/2026):
+  clean RX audio and mic, WiFi unharmed; on the air, still to be tried on a
+  dummy load.
 
 ### Bluetooth CAT
 

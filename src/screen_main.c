@@ -45,6 +45,8 @@
 #include "cw_encoder.h"
 #include "dialog_cw_kbd.h"
 #include "voice_messages.h"
+#include "audio.h"
+#include "btaudio.h"
 #include "swrscan_window.h"
 #include "ft8_window.h"
 #include "gps_window.h"
@@ -779,10 +781,15 @@ static bool page_key(keypad_key_t key, bool tap, bool hold) {
     return false;
 }
 
+static void mic_ptt_end(void);
+
 /* PTT: in CW it keys the carrier too. False: the press refused where the radio may not transmit (radio_set_ptt) */
 static bool ptt_key(keypad_state_t state) {
     bool ok = true;
 
+    if (state != KEYPAD_PRESS) {
+        mic_ptt_end();      /* the headset's TX too, whichever way it is let go */
+    }
     if (state == KEYPAD_PRESS) {
         dialog_msg_voice_ptt_pressed();
         cw_encoder_ptt_pressed();   /* a beacon or QRSS3 lets go of the key first */
@@ -797,6 +804,63 @@ static bool ptt_key(keypad_state_t state) {
         radio_set_ptt(false);
     }
     return ok;
+}
+
+/* The PTT key on the radio's side with a hands-free headset on a Bluetooth dongle (btaudio-ctl, F4OLI 24/11/2026):
+ * the headset's mic on the air, through the modem as an app's audio; the screen says "TX: MIC BT". The hand mic's PTT
+ * keys the base with the hand mic as before, and CW keys as before. Let go at the release, or when the headset goes
+ * away or the modem is let go another way (the SWR protection, the band's end): mic_timer */
+#define MIC_TICK_MS 100
+
+static bool        mic_tx;
+static lv_timer_t *mic_timer;
+
+static void mic_ptt_end(void) {
+    if (!mic_tx) {
+        return;
+    }
+    mic_tx = false;
+    radio_set_modem(false);
+    audio_mic_bt_end();
+    if (mic_timer) {
+        lv_timer_del(mic_timer);
+        mic_timer = NULL;
+    }
+}
+
+static void mic_tick_cb(lv_timer_t *t) {
+    if (audio_mic_bt_lost()) {
+        mic_ptt_end();
+        msg_update_text_fmt("PTT off: the headset is gone");
+    } else if (!radio_get_modem()) {
+        mic_ptt_end();
+    }
+}
+
+static bool side_ptt_key(keypad_state_t state) {
+    char src[128];
+
+    if (state != KEYPAD_PRESS || cw_mode() || !btaudio_mic_source(src, sizeof(src))) {
+        return ptt_key(state);
+    }
+    dialog_msg_voice_ptt_pressed();
+    cw_encoder_ptt_pressed();
+    if (mic_tx || radio_get_modem()) {     /* an app on the air (FT8, a voice message): its TX, not cut short */
+        return false;
+    }
+    if (!audio_mic_bt_begin(src)) {
+        msg_update_text_fmt("Headset mic busy");
+        return false;
+    }
+    radio_set_modem(true);
+    if (!radio_get_modem()) {       /* refused where the radio may not transmit */
+        audio_mic_bt_end();
+        return false;
+    }
+    mic_tx    = true;
+    mic_timer = lv_timer_create(mic_tick_cb, MIC_TICK_MS, NULL);
+    msg_update_text_fmt("TX: MIC BT");
+    return true;
 }
 
 /* A/B, the front key and the H-22's: VFO A/B; long: this VFO copied to the other one. Not while an app holds the
@@ -979,7 +1043,7 @@ static void front_key_cb(lv_event_t *e) {
             break;
 
         case KEYPAD_PTT:
-            ptt_key(ev->state);
+            side_ptt_key(ev->state);
             break;
 
         case KEYPAD_VM:

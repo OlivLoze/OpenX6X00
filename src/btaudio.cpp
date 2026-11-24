@@ -25,6 +25,7 @@ extern "C" {
 #define BTAUDIO_CTL   "/usr/sbin/btaudio-ctl"
 #define BTAUDIO_CONF  BOARD_DATA "/btaudio.conf"
 #define HP_STATE      "/tmp/btaudio-hp"     /* written by btaudio-ctl: headphones connected */
+#define MIC_STATE     "/tmp/btaudio-mic"    /* written by btaudio-ctl: a headset's mic, hands-free */
 #define HP_VOL_FILE   BOARD_DATA "/btaudio.hpvol"  /* last headphone volume set with the VOL control */
 #define SAVED_AF_VOL  BOARD_DATA "/btaudio.afvol"  /* AF volume before muting, survives a power off */
 
@@ -176,6 +177,18 @@ bool btaudio_speaker_muted(void) {
 bool btaudio_hp_sink(char *buf, size_t size) {
     if (!btaudio_speaker_muted()) return false;
     FILE *fp = fopen(HP_STATE, "r");
+    if (!fp) return false;
+    bool ok = fgets(buf, size, fp) != NULL;
+    fclose(fp);
+    if (!ok) return false;
+    buf[strcspn(buf, "\n")] = '\0';
+    return buf[0] != '\0';
+}
+
+/* The headset's mic (the source btaudio-ctl writes to MIC_STATE: hands-free on a dongle), false without one.
+ * Any thread. */
+bool btaudio_mic_source(char *buf, size_t size) {
+    FILE *fp = fopen(MIC_STATE, "r");
     if (!fp) return false;
     bool ok = fgets(buf, size, fp) != NULL;
     fclose(fp);

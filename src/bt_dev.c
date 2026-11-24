@@ -43,6 +43,7 @@
 
 #include <gio/gio.h>
 
+#include <dirent.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -62,7 +63,10 @@
 #define AGENT_TICK_S    30
 
 #define BLUEZ           "org.bluez"
-#define ADAPTER_PATH    "/org/bluez/hci0"
+/* The adapter in use (bt_adapter_sys): "/org/bluez/hciN". Set by the worker at each refresh, read by the agent's
+ * thread too: a short string that only changes when a dongle takes over at the start (btcat-setup) */
+static char adapter_path[32] = "/org/bluez/hci0";
+#define ADAPTER_PATH    adapter_path
 #define AGENT_PATH      "/org/x6100/bt_agent"
 #define AGENT_CAP       "NoInputNoOutput"
 #define AGENT_CAP_KBD   "KeyboardDisplay"   /* only while pairing a keyboard */
@@ -159,9 +163,45 @@ static bool addr_ok(const char *addr) {
     return true;
 }
 
-/* "AA:BB:..." -> "/org/bluez/hci0/dev_AA_BB_..." */
+/* The Bluetooth adapter in use, as /usr/sbin/bt-adapter picks it: a USB dongle when one is plugged, else the radio's
+ * own (the RTL8723BU on the MUSB host). Its name ("hci1") in out; false while there is none */
+bool bt_adapter_sys(char *out, size_t size) {
+    DIR           *d = opendir("/sys/class/bluetooth");
+    struct dirent *e;
+    char           own[16] = "", link[256], p[300];
+    bool           found = false;
+
+    if (!d) {
+        return false;
+    }
+    while ((e = readdir(d)) != NULL) {
+        ssize_t n;
+
+        if (strncmp(e->d_name, "hci", 3) || strchr(e->d_name, ':') || strlen(e->d_name) >= sizeof(own)) {
+            continue;
+        }
+        snprintf(p, sizeof(p), "/sys/class/bluetooth/%s", e->d_name);
+        n = readlink(p, link, sizeof(link) - 1);
+        link[n > 0 ? n : 0] = 0;
+        if (strstr(link, "musb-hdrc")) {
+            if (!own[0]) snprintf(own, sizeof(own), "%s", e->d_name);
+            continue;
+        }
+        if (out) snprintf(out, size, "%s", e->d_name);
+        found = true;
+        break;
+    }
+    closedir(d);
+    if (!found && own[0]) {
+        if (out) snprintf(out, size, "%s", own);
+        found = true;
+    }
+    return found;
+}
+
+/* "AA:BB:..." -> "/org/bluez/hciN/dev_AA_BB_..." */
 static void dev_path(const char *addr, char *out, size_t out_sz) {
-    snprintf(out, out_sz, ADAPTER_PATH "/dev_%.17s", addr);
+    snprintf(out, out_sz, "%s/dev_%.17s", ADAPTER_PATH, addr);
     for (char *p = out; *p; p++) {
         if (*p == ':') *p = '_';
     }
@@ -449,8 +489,21 @@ static void do_refresh(void) {
     GVariantIter *objs;
     const char   *path;
     GVariant     *ifaces;
-    GVariant     *r = managed_objects();
-    bt_adapter_t  ad = { .seen = true, .bluez = r != NULL };
+    GVariant     *r;
+    bt_adapter_t  ad = { .seen = true };
+    char          hci[16];
+
+    if (bt_adapter_sys(hci, sizeof(hci))) {
+        char p[sizeof(adapter_path)];
+
+        snprintf(p, sizeof(p), "/org/bluez/%s", hci);
+        if (strcmp(p, adapter_path)) {
+            plog("adapter: %s", p);
+            memcpy(adapter_path, p, sizeof(p));
+        }
+    }
+    r        = managed_objects();
+    ad.bluez = r != NULL;
 
     if (r) {
         g_variant_get(r, "(a{oa{sa{sv}}})", &objs);
@@ -476,7 +529,7 @@ static void do_refresh(void) {
             gboolean    connected = FALSE;
             bt_dev_t    d;
 
-            if (dev && strncmp(path, ADAPTER_PATH "/", strlen(ADAPTER_PATH) + 1) == 0) {
+            if (dev && strncmp(path, ADAPTER_PATH, strlen(ADAPTER_PATH)) == 0 && path[strlen(ADAPTER_PATH)] == '/') {
                 g_variant_lookup(dev, "Address", "&s", &addr);
                 g_variant_lookup(dev, "Name", "&s", &name);
                 g_variant_lookup(dev, "Paired", "b", &paired);

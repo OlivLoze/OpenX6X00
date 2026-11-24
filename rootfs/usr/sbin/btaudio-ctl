@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bluetooth headphones (A2DP) for the RX audio. Used by Settings -> Bluetooth
+# Bluetooth headphones for the RX audio, and a headset's mic for TX. Used by Settings -> Bluetooth
 # (HEADPHONES). Scan, pair, connect and remove are in the GUI (bt_dev.c, BlueZ
 # over D-Bus); this script keeps the audio side.
 #
@@ -10,12 +10,17 @@
 #   btaudio-ctl volume N                 headphone volume, 0..100 %
 #   btaudio-ctl mute on|off              GUI: AF volume to 0 while headphones are connected
 #   btaudio-ctl boot                     from btcat-setup: monitor + autoconnect
-#   btaudio-ctl monitor                  keeps the cards on A2DP and the loopback up
+#   btaudio-ctl monitor                  keeps the cards on their profile and the loopback up
 #
-# Only A2DP is used: HFP/HSP (SCO) gives no audio on this radio and drops
-# the WiFi (see also /etc/pulse/system.pa.d/btaudio.pa).
+# A2DP on the radio's own Bluetooth: there HFP/HSP (SCO) gives no audio and
+# drops the WiFi (see also /etc/pulse/system.pa.d/btaudio.pa). On a USB
+# dongle (bt-adapter) a headset with a mic goes hands-free (HFP) by itself
+# (F4OLI, 24/11/2026): its mic is named in $MIC for the GUI, whose PTT key
+# sends it on the air (audio.c audio_mic_bt_begin), and VOL is its volume
+# as for A2DP headphones. Headphones without a mic stay on A2DP.
 CONF=/mnt/btaudio.conf
 STATE=/tmp/btaudio-hp
+MIC=/tmp/btaudio-mic
 PIDFILE=/tmp/btaudio-monitor.pid
 LST=/tmp/btaudio-lst
 SOURCE=alsa_input.platform-sound.stereo-fallback
@@ -39,16 +44,30 @@ set_kv() {
 
 yn() { [ "$1" = "on" ] && echo yes || echo no; }
 
-hp_sinks() { pactl list short sinks 2>/dev/null | awk '$2 ~ /^bluez_sink\..*a2dp_sink$/ {print $2}'; }
+hp_sinks() { pactl list short sinks 2>/dev/null | awk '$2 ~ /^bluez_sink\..*(a2dp_sink|handsfree_head_unit)$/ {print $2}'; }
 
-# Never HFP/HSP: put every headphone card that is not on a2dp_sink back on it
+# Every headphone card on its profile: hands-free (HFP, the mic) for a headset on a dongle, else A2DP. Never HSP.
+# A card with neither (a phone connected for CAT) is left alone
 force_a2dp() {
-	for card in $(pactl list cards 2>/dev/null | awk '
-		$1 == "Name:" {n = $2; a = 0}
+	hfp=no
+	/usr/sbin/bt-adapter dongle && hfp=yes
+	pactl list cards 2>/dev/null | awk -v hfp=$hfp '
+		$1 == "Name:" {n = $2; a = 0; h = 0}
 		$1 == "a2dp_sink:" {a = 1}
-		$1 == "Active" && $2 == "Profile:" {if (n ~ /^bluez_card\./ && a && $3 != "a2dp_sink") print n}'); do
-		pactl set-card-profile "$card" a2dp_sink
+		$1 == "handsfree_head_unit:" {h = 1}
+		$1 == "Active" && $2 == "Profile:" {
+			if (n !~ /^bluez_card\./ || !a) next
+			want = (hfp == "yes" && h) ? "handsfree_head_unit" : "a2dp_sink"
+			if ($3 != want) print n, want
+		}' | while read -r card want; do
+		pactl set-card-profile "$card" "$want"
 	done
+}
+
+# The headset's mic for the GUI's PTT key, or none
+apply_mic() {
+	m=$(pactl list short sources 2>/dev/null | awk '$2 ~ /^bluez_source\..*handsfree_head_unit$/ {print $2; exit}')
+	if [ -n "$m" ]; then echo "$m" > $MIC; else rm -f $MIC; fi
 }
 
 apply_rx() {
@@ -68,8 +87,9 @@ apply_rx() {
 			# - latency offset 0 on the bluez sink port: no extra delay is added to
 			#   the reported latency (some setups leave a non-zero offset).
 			# A2DP/SBC encoding and the headphones add their own delay after this.
-			card=bluez_card.${s#bluez_sink.}; card=${card%.a2dp_sink}
+			card=bluez_card.${s#bluez_sink.}; card=${card%.a2dp_sink}; card=${card%.handsfree_head_unit}
 			pactl set-port-latency-offset "$card" headphone-output 0 2>/dev/null
+			pactl set-port-latency-offset "$card" headset-output 0 2>/dev/null
 			# - max_latency_msec / fast_adjust_threshold_msec: every underrun raises
 			#   the loopback latency and it never comes down (seen growing to 2 s);
 			#   cap it at target + 300 ms and drop the excess at once (as openx6100's
@@ -100,7 +120,7 @@ short_lst() {
 	printf '%s\n' $set_lst > $LST
 }
 
-sync_audio() { force_a2dp; short_lst; apply_rx; }
+sync_audio() { force_a2dp; short_lst; apply_rx; apply_mic; }
 
 status() {
 	hp=0; vol=-1

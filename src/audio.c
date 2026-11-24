@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <math.h>
+#include <stdatomic.h>
 
 #include <pulse/pulseaudio.h>
 #include <alsa/asoundlib.h>
@@ -367,6 +368,104 @@ void audio_play_lowlat_end(void) {
     pa_stream_unref(bt_stm);
     pa_threaded_mainloop_unlock(mloop);
     bt_stm = NULL;
+}
+
+/* The headset's mic on the air (the PTT key with a hands-free headset on a dongle, screen_main.c): recorded from its
+ * source and written into the codec as it comes, both streams driven by the mainloop (mic_read_cb), as little queued
+ * as the TCI's voice (audio_play_lowlat_begin). The base takes it while the modem is keyed. One at a time */
+static pa_stream    *mic_rec;
+static pa_stream    *mic_play;
+static atomic_bool   mic_lost;     /* the headset went away under it: the PTT key lets go (screen_main.c) */
+
+static void mic_read_cb(pa_stream *s, size_t nbytes, void *udata) {
+    const void *buf = NULL;
+    void       *out = NULL;
+    size_t      n;
+
+    if (pa_stream_peek(s, &buf, &nbytes) < 0 || nbytes == 0) {
+        return;
+    }
+    n = LV_MIN(mic_play ? pa_stream_writable_size(mic_play) : 0, nbytes) & ~(size_t)1;
+    /* a hole (buf NULL) or no room: dropped, the voice stays on time */
+    if (buf && n && pa_stream_begin_write(mic_play, &out, &n) == 0 && out) {
+        memcpy(out, buf, n & ~(size_t)1);
+        pa_stream_write(mic_play, out, n & ~(size_t)1, NULL, 0, PA_SEEK_RELATIVE);
+    }
+    pa_stream_drop(s);
+}
+
+static void mic_state_cb(pa_stream *s, void *userdata) {
+    pa_stream_state_t st = pa_stream_get_state(s);
+
+    if (st == PA_STREAM_FAILED || st == PA_STREAM_TERMINATED) {
+        atomic_store(&mic_lost, true);
+    }
+    pa_threaded_mainloop_signal(mloop, 0);
+}
+
+/* With the mainloop locked */
+static void mic_close(void) {
+    if (mic_rec) {
+        pa_stream_set_read_callback(mic_rec, NULL, NULL);
+        pa_stream_set_state_callback(mic_rec, NULL, NULL);
+        pa_stream_disconnect(mic_rec);
+        pa_stream_unref(mic_rec);
+        mic_rec = NULL;
+    }
+    if (mic_play) {
+        pa_stream_disconnect(mic_play);
+        pa_stream_unref(mic_play);
+        mic_play = NULL;
+    }
+}
+
+bool audio_mic_bt_begin(const char *source) {
+    pa_sample_spec    spec = { .format = PA_SAMPLE_S16NE, .rate = AUDIO_PLAY_RATE, .channels = 1 };
+    pa_buffer_attr    pattr, rattr;
+    pa_stream_state_t st   = PA_STREAM_FAILED;
+
+    memset(&pattr, 0xff, sizeof(pattr));
+    pattr.tlength = pa_usec_to_bytes(100 * PA_USEC_PER_MSEC, &spec);
+    pattr.prebuf  = pa_usec_to_bytes(60 * PA_USEC_PER_MSEC, &spec);
+    pattr.minreq  = pa_usec_to_bytes(10 * PA_USEC_PER_MSEC, &spec);
+    memset(&rattr, 0xff, sizeof(rattr));
+    rattr.fragsize = pa_usec_to_bytes(10 * PA_USEC_PER_MSEC, &spec);
+
+    pa_threaded_mainloop_lock(mloop);
+    if (mic_rec || mic_play) {
+        pa_threaded_mainloop_unlock(mloop);
+        return false;
+    }
+    atomic_store(&mic_lost, false);
+    mic_play = stream_open("X6100 GUI Headset mic", play_device, &pattr);
+    if (mic_play) {
+        mic_rec = pa_stream_new(ctx, "X6100 GUI Headset mic", &spec, NULL);
+        pa_stream_set_state_callback(mic_rec, mic_state_cb, NULL);
+        pa_stream_set_read_callback(mic_rec, mic_read_cb, NULL);
+        if (pa_stream_connect_record(mic_rec, source, &rattr, PA_STREAM_ADJUST_LATENCY | PA_STREAM_DONT_MOVE) == 0) {
+            while ((st = pa_stream_get_state(mic_rec)) == PA_STREAM_CREATING) {
+                pa_threaded_mainloop_wait(mloop);
+            }
+        }
+        if (st != PA_STREAM_READY) {
+            LV_LOG_ERROR("Headset mic %s failed", source);
+        }
+    }
+    if (st != PA_STREAM_READY) {
+        mic_close();
+    }
+    pa_threaded_mainloop_unlock(mloop);
+    return st == PA_STREAM_READY;
+}
+
+void audio_mic_bt_end(void) {
+    pa_threaded_mainloop_lock(mloop);
+    mic_close();
+    pa_threaded_mainloop_unlock(mloop);
+}
+
+bool audio_mic_bt_lost(void) {
+    return atomic_load(&mic_lost);
 }
 
 /* audio_play without waiting: writes what fits and drops the rest, false when nothing fitted.
