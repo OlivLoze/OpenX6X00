@@ -214,6 +214,44 @@ void SettingsManager::init_load(void (*on_db_error)(const char *msg)) {
     tx_shift_follow();
 }
 
+void SettingsManager::filter_default(int32_t *low, int32_t *high) {
+    ModeGroup group = mode_group((radio_mode_t)cp_cur_mode.get());
+    int32_t   lo    = mode_group_filter_low_default(group);
+    int32_t   hi    = mode_group_filter_high_default(group);
+
+    switch (filter_mode(cp_cur_mode.get())) {
+        case FilterMode::AM:
+        case FilterMode::FM:
+            lo = 0;
+            break;
+        case FilterMode::CW:
+            // hi is the width, centred on the key tone (cur_filter_low_compute)
+            lo = std::max(0, p_key_tone.get() - hi / 2);
+            hi = lo + hi;
+            break;
+        case FilterMode::SSB:
+        default:
+            break;
+    }
+    *low  = lo;
+    *high = hi;
+}
+
+void SettingsManager::filter_reset() {
+    ModeGroup group = mode_group((radio_mode_t)cp_cur_mode.get());
+    int32_t   lo    = mode_group_filter_low_default(group);
+    int32_t   hi    = mode_group_filter_high_default(group);
+
+    // Each edge is validated against the other: the low one first when it sits past the new high one
+    if (p_mode_filter_low.get() >= hi) {
+        p_mode_filter_low.set(lo);
+        p_mode_filter_high.set(hi);
+    } else {
+        p_mode_filter_high.set(hi);
+        p_mode_filter_low.set(lo);
+    }
+}
+
 void SettingsManager::on_mode_filter_low_not_found() {
     p_mode_filter_low.set_quiet(mode_group_filter_low_default((ModeGroup)p_mode_filter_low.context_id()));
 }

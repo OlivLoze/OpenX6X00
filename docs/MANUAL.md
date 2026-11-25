@@ -256,6 +256,11 @@ line).
   or back, stopping at Off and Auto, 10 Hz and 100 kHz (the AGC and FST keys go
   round), and switches PRE, ATT and ATU. Up to v0.3.7 AGC, PRE and ATT could not
   go on a knob, and there was no ATU or Step button.
+- Filter reset, the fifth DFL button, puts the current mode's filter back as
+  it comes new, and its second line shows to what: 50-2950 Hz in SSB and the
+  digital modes, 0-4000 Hz in AM and NFM, 0-8000 Hz in WFM, 500 Hz around the
+  key tone in CW. "Filter reset: ..." says it is done. The other modes keep
+  their own filters.
 - At first VOL has Volume, RF gain, the filter edges and TX power, and the MFK
   Spectrum Zoom and DNF. Volume never leaves VOL.
 

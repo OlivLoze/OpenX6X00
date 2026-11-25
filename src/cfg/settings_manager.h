@@ -942,6 +942,11 @@ class SettingsManager {
     // edits it while the radio runs
     static std::vector<BandInfo> smeter_parts(int32_t band_id);
 
+    // The current mode's filter as it comes new (DFL > Filter reset): the edges it would show, and setting them.
+    // Only the current mode's; the other modes keep theirs
+    void filter_default(int32_t *low, int32_t *high);
+    void filter_reset();
+
 #ifdef BOARD_X6200
     // The X6200's attenuator figure for the power the radio is on, battery or a supply: the one the meter adds back
     // and Measure sets (#125)

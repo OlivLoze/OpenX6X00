@@ -259,6 +259,21 @@ static button_data_t btn_flt_high = knob([] { return text("Filter high:\n%i Hz",
                                          CTRL_FILTER_HIGH, &cfg_sm.cp_cur_filter_high);
 static button_data_t btn_flt_bw = knob([] { return text("Filter BW:\n%i Hz", cfg_sm.cp_cur_filter_bw.get()); },
                                        CTRL_FILTER_BW, &cfg_sm.cp_cur_filter_bw);
+/* The current mode's filter back as it comes new; the label shows what a press sets */
+static button_data_t btn_flt_reset = fn_btn([] {
+                                                int32_t lo, hi;
+
+                                                cfg_sm.filter_default(&lo, &hi);
+                                                return text("Filter reset\nto %i-%i Hz", lo, hi);
+                                            },
+                                            [](button_data_t *b) {
+                                                int32_t lo, hi;
+
+                                                cfg_sm.filter_reset();
+                                                cfg_sm.filter_default(&lo, &hi);
+                                                msg_update_text_fmt("Filter reset: %i-%i Hz", lo, hi);
+                                                buttons_refresh(b);
+                                            }, &cfg_sm.cp_cur_mode);
 
 /* MFK */
 static button_data_t btn_rit = knob([] { return text("RIT:\n%+i", cfg_sm.p_rit.get()); }, CTRL_RIT, &cfg_sm.p_rit);
@@ -444,7 +459,7 @@ static buttons_page_t page_dfn_2 = {{&btn_dfn_p2, &btn_nb, &btn_nb_level, &btn_n
 static buttons_page_t page_dfn_3 = {{&btn_dfn_p3, &btn_nr, &btn_nr_level}};
 
 /* one page, no page button */
-static buttons_page_t page_dfl = {{&btn_flt_low, &btn_flt_high, &btn_flt_bw, &btn_step}};
+static buttons_page_t page_dfl = {{&btn_flt_low, &btn_flt_high, &btn_flt_bw, &btn_step, &btn_flt_reset}};
 
 static buttons_page_t page_mem_1 = {{&btn_mem_p1, &btn_mem[0], &btn_mem[1], &btn_mem[2], &btn_mem[3]}};
 static buttons_page_t page_mem_2 = {{&btn_mem_p2, &btn_mem[4], &btn_mem[5], &btn_mem[6], &btn_mem[7]}};
