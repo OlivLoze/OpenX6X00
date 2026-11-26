@@ -28,6 +28,7 @@
 #include "info_bar.h"
 #include "smeter.h"
 #include "tx_meters.h"
+#include "voice_eq.h"
 #include "mfk_control.h"
 #include "vol_control.h"
 #include "main.h"
@@ -812,8 +813,49 @@ static bool ptt_key(keypad_state_t state) {
  * away or the modem is let go another way (the SWR protection, the band's end): mic_timer */
 #define MIC_TICK_MS 100
 
+#define MIC_ALC_FROM_MS 1000     /* the ALC readings of the over's first second left out: the PA and the ALC settle */
+
 static bool        mic_tx;
 static lv_timer_t *mic_timer;
+static uint32_t    mic_start;
+static uint8_t     mic_alc_seen;
+static float       mic_alc_sum;
+static int         mic_alc_n;
+
+/* After an over, Settings > Bluetooth > MIC (TX)'s auto: the mic gain towards an ALC of 2-3 and the EQ towards the
+ * voice, for the next over (voice_eq.h); a word on the screen when either moved */
+static void mic_auto_after_over(void) {
+    char    what[64] = "";
+    int32_t gain = param_i_get(cfg_bt_mic_gain);
+
+    if (param_i_get(cfg_bt_mic_agc)) {
+        int32_t g = LV_CLAMP(-20, gain + veq_gain_step(mic_alc_sum, mic_alc_n), 10);
+
+        if (g != gain) {
+            param_i_set(cfg_bt_mic_gain, g);
+            snprintf(what, sizeof(what), "gain %+d dB", (int)g);
+        }
+    }
+    if (param_i_get(cfg_bt_mic_eq) == VEQ_AUTO) {
+        int db[VEQ_BANDS] = {(int)param_i_get(cfg_bt_mic_eq_bass), (int)param_i_get(cfg_bt_mic_eq_mid),
+                             (int)param_i_get(cfg_bt_mic_eq_treble)};
+        int overs = param_i_get(cfg_bt_mic_eq_overs);
+
+        if (audio_mic_bt_learn(db, &overs)) {
+            param_i_set(cfg_bt_mic_eq_bass, db[VEQ_BASS]);
+            param_i_set(cfg_bt_mic_eq_mid, db[VEQ_MID]);
+            param_i_set(cfg_bt_mic_eq_treble, db[VEQ_TREBLE]);
+            snprintf(what + strlen(what), sizeof(what) - strlen(what), "%sEQ %+d/%+d/%+d dB", *what ? ", " : "",
+                     db[VEQ_BASS], db[VEQ_MID], db[VEQ_TREBLE]);
+        }
+        param_i_set(cfg_bt_mic_eq_overs, overs);
+    }
+    LV_LOG_USER("Mic over: ALC %.1f from %d readings%s%s", mic_alc_n ? mic_alc_sum / mic_alc_n : 0.0f, mic_alc_n,
+                *what ? ", " : "", what);
+    if (*what) {
+        msg_update_text_fmt("Mic auto: %s", what);
+    }
+}
 
 static void mic_ptt_end(void) {
     if (!mic_tx) {
@@ -826,9 +868,18 @@ static void mic_ptt_end(void) {
         lv_timer_del(mic_timer);
         mic_timer = NULL;
     }
+    mic_auto_after_over();
 }
 
 static void mic_tick_cb(lv_timer_t *t) {
+    float alc;
+
+    /* The ALC while the voice is on: the pauses' readings (the ALC at rest) would take the gain up */
+    if (tx_info_refresh(&mic_alc_seen, &alc, NULL, NULL) && lv_tick_elaps(mic_start) > MIC_ALC_FROM_MS
+        && audio_mic_bt_voice()) {
+        mic_alc_sum += alc;
+        mic_alc_n++;
+    }
     if (audio_mic_bt_lost()) {
         mic_ptt_end();
         msg_update_text_fmt("PTT off: the headset is gone");
@@ -857,7 +908,11 @@ static bool side_ptt_key(keypad_state_t state) {
         audio_mic_bt_end();
         return false;
     }
-    mic_tx    = true;
+    mic_tx      = true;
+    mic_start   = lv_tick_get();
+    mic_alc_sum = 0.0f;
+    mic_alc_n   = 0;
+    tx_info_refresh(&mic_alc_seen, NULL, NULL, NULL);   /* the readings from now on */
     mic_timer = lv_timer_create(mic_tick_cb, MIC_TICK_MS, NULL);
     msg_update_text_fmt("TX: MIC BT");
     return true;

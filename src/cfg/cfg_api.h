@@ -149,6 +149,16 @@ extern ParamInt *cfg_field_boot;     // p_field_boot
 extern ParamInt *cfg_field_respot;   // p_field_respot
 extern ParamInt *cfg_voice_msg_gain; // p_voice_msg_gain
 extern ParamInt *cfg_bt_mic_gain; // p_bt_mic_gain
+extern ParamInt *cfg_bt_mic_agc; // p_bt_mic_agc
+extern ParamInt *cfg_bt_mic_eq; // p_bt_mic_eq
+extern ParamInt *cfg_bt_mic_eq_bass; // p_bt_mic_eq_bass
+extern ParamInt *cfg_bt_mic_eq_mid; // p_bt_mic_eq_mid
+extern ParamInt *cfg_bt_mic_eq_treble; // p_bt_mic_eq_treble
+extern ParamInt *cfg_bt_mic_eq_overs; // p_bt_mic_eq_overs
+extern ParamInt *cfg_bt_rx_eq; // p_bt_rx_eq
+extern ParamInt *cfg_bt_rx_eq_bass; // p_bt_rx_eq_bass
+extern ParamInt *cfg_bt_rx_eq_mid; // p_bt_rx_eq_mid
+extern ParamInt *cfg_bt_rx_eq_treble; // p_bt_rx_eq_treble
 extern ParamInt *cfg_ft8_max_repeats; // p_ft8_max_repeats
 extern ParamInt *cfg_ft8_info;       // p_ft8_info
 

@@ -48,6 +48,10 @@ bool audio_play_if_room(int16_t *buf, size_t samples);
 bool audio_mic_bt_begin(const char *source);
 void audio_mic_bt_end(void);
 bool audio_mic_bt_lost(void);
+/* The headset's voice heard now (its ALC readings count for the auto gain) */
+bool audio_mic_bt_voice(void);
+/* After an over, its voice taught to the auto EQ (voice_eq.h veq_learn): true when db[] moved */
+bool audio_mic_bt_learn(int db[3], int *overs);
 
 void audio_gain_db(int16_t *buf, size_t samples, float gain, int16_t *out);
 void audio_gain_db_transition(int16_t *buf, size_t samples, float gain1, float gain2, int16_t *out);

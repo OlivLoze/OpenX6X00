@@ -427,6 +427,26 @@ class SettingsManager {
     // AirPods Pro did not drive the ALC to 7.6 (24/11/2026)
     Parameter<int32_t> p_bt_mic_gain{"bt_mic_gain", -6, -20, 10,
         StorageType::GLOBAL, pending_writes_, &global_params_};
+    // Its equalizers (voice_eq.h): Off, Manual, Auto (VEQ_*), the bands in dB. Auto gain: the mic gain moved an over
+    // at a time towards an ALC of 2-3. TX auto writes the bands it learned here, from that many overs
+    Parameter<int32_t> p_bt_mic_agc{"bt_mic_agc", 0, 0, 1, StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_bt_mic_eq{"bt_mic_eq", 0, 0, 2, StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_bt_mic_eq_bass{"bt_mic_eq_bass", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    Parameter<int32_t> p_bt_mic_eq_mid{"bt_mic_eq_mid", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    Parameter<int32_t> p_bt_mic_eq_treble{"bt_mic_eq_treble", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    Parameter<int32_t> p_bt_mic_eq_overs{"bt_mic_eq_overs", 0, 0, 9999, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    // The headset's RX equalizer, as the mic's; Auto's bands are not kept (they follow what is heard)
+    Parameter<int32_t> p_bt_rx_eq{"bt_rx_eq", 0, 0, 2, StorageType::GLOBAL, pending_writes_, &global_params_};
+    Parameter<int32_t> p_bt_rx_eq_bass{"bt_rx_eq_bass", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    Parameter<int32_t> p_bt_rx_eq_mid{"bt_rx_eq_mid", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
+    Parameter<int32_t> p_bt_rx_eq_treble{"bt_rx_eq_treble", 0, -12, 12, StorageType::GLOBAL, pending_writes_,
+        &global_params_};
 
     // SWR scan
     Parameter<int32_t> p_swrscan_linear{"swrscan_linear", true, 0, 1,

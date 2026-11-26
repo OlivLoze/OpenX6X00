@@ -27,6 +27,7 @@
 #include "params/params.h"
 #include "cfg/cfg_api.h"
 #include "btaudio.h"
+#include "voice_eq.h"
 
 #define AUDIO_RATE_MS   100
 #define PA_CONNECT_TRIES 20     /* a second apart: PulseAudio still coming up, or x6100_daemon restarting it */
@@ -376,6 +377,9 @@ void audio_play_lowlat_end(void) {
 static pa_stream    *mic_rec;
 static pa_stream    *mic_play;
 static atomic_bool   mic_lost;     /* the headset went away under it: the PTT key lets go (screen_main.c) */
+static veq_t         mic_eq;       /* Settings > Bluetooth > MIC (TX): the EQ, and the meter the auto EQ learns from */
+static veq_meter_t   mic_meter;
+static atomic_bool   mic_voice;    /* the meter hears the voice now: the ALC readings count (screen_main.c) */
 
 static void mic_read_cb(pa_stream *s, size_t nbytes, void *udata) {
     const void *buf = NULL;
@@ -385,12 +389,23 @@ static void mic_read_cb(pa_stream *s, size_t nbytes, void *udata) {
     if (pa_stream_peek(s, &buf, &nbytes) < 0 || nbytes == 0) {
         return;
     }
+    if (buf) {
+        /* The voice as the headset gives it, before the EQ: what the auto EQ makes up for */
+        veq_meter_run(&mic_meter, buf, nbytes / 2);
+        atomic_store(&mic_voice, mic_meter.hold && mic_meter.activity > 0.3f);
+    }
     n = LV_MIN(mic_play ? pa_stream_writable_size(mic_play) : 0, nbytes) & ~(size_t)1;
     /* a hole (buf NULL) or no room: dropped, the voice stays on time */
     if (buf && n && pa_stream_begin_write(mic_play, &out, &n) == 0 && out) {
         n &= ~(size_t)1;
-        /* Settings > Bluetooth > Mic gain, read at each block: it changes on the air */
-        audio_gain_db((int16_t *)buf, n / 2, param_i_get(cfg_bt_mic_gain), out);
+        /* Settings > Bluetooth > Mic gain and the EQ, read at each block: they change on the air */
+        if (param_i_get(cfg_bt_mic_eq) == VEQ_OFF) {
+            veq_set(&mic_eq, 0, 0, 0);
+        } else {
+            veq_set(&mic_eq, param_i_get(cfg_bt_mic_eq_bass), param_i_get(cfg_bt_mic_eq_mid),
+                    param_i_get(cfg_bt_mic_eq_treble));
+        }
+        veq_run(&mic_eq, buf, out, n / 2, param_i_get(cfg_bt_mic_gain));
         pa_stream_write(mic_play, out, n, NULL, 0, PA_SEEK_RELATIVE);
     }
     pa_stream_drop(s);
@@ -439,6 +454,10 @@ bool audio_mic_bt_begin(const char *source) {
         return false;
     }
     atomic_store(&mic_lost, false);
+    atomic_store(&mic_voice, false);
+    veq_init(&mic_eq, AUDIO_PLAY_RATE);
+    veq_fade_in(&mic_eq, 100);      /* the first syllable into the ALC: 17.9 W where 7 W was set (24/11) */
+    veq_meter_init(&mic_meter, AUDIO_PLAY_RATE);
     mic_play = stream_open("X6100 GUI Headset mic", play_device, &pattr);
     if (mic_play) {
         mic_rec = pa_stream_new(ctx, "X6100 GUI Headset mic", &spec, NULL);
@@ -468,6 +487,19 @@ void audio_mic_bt_end(void) {
 
 bool audio_mic_bt_lost(void) {
     return atomic_load(&mic_lost);
+}
+
+bool audio_mic_bt_voice(void) {
+    return atomic_load(&mic_voice);
+}
+
+bool audio_mic_bt_learn(int db[3], int *overs) {
+    bool moved;
+
+    pa_threaded_mainloop_lock(mloop);
+    moved = !mic_rec && veq_learn(&mic_meter, db, overs);
+    pa_threaded_mainloop_unlock(mloop);
+    return moved;
 }
 
 /* audio_play without waiting: writes what fits and drops the rest, false when nothing fitted.
